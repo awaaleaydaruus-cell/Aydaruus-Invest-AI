@@ -38,7 +38,6 @@ def init_db():
             last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    # Tietokanta qiimaha kaydin
     c.execute("""
         CREATE TABLE IF NOT EXISTS prices (
             id INTEGER PRIMARY KEY,
@@ -52,15 +51,13 @@ def init_db():
 
 init_db()
 
-# Kaydi USER_ID (waxaa loo isticmaalaa warbixin maalinle ah)
 USER_ID = None
 
 # =============================================
-# 4. PORTFOLIO-gaaga (PDF + Kuvaaha ku qoran)
+# 4. PORTFOLIO-gaaga
 # =============================================
 TOTAL_PORTFOLIO_VALUE = 33253.64  # €
 
-# ETF-yada
 ETF_LIST = [
     {"symbol": "SPY", "name": "iShares Core S&P 500"},
     {"symbol": "VOO", "name": "Vanguard S&P 500"},
@@ -82,7 +79,6 @@ ETF_LIST = [
     {"symbol": "UDVD", "name": "SPDR S&P US Dividend Aristocrats"}
 ]
 
-# Stocks (27 holdings)
 STOCK_LIST = [
     {"symbol": "TSLA", "name": "Tesla"},
     {"symbol": "AMZN", "name": "Amazon"},
@@ -117,14 +113,21 @@ STOCK_LIST = [
 # 5. API-FUNKTIOIT – QIIMAHA HEL
 # =============================================
 
-# Crypto (CoinGecko - bilaash)
 def get_crypto_price(symbol):
     try:
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=eur"
         response = requests.get(url, timeout=10)
-        data = response.json()
-        return data[symbol]["eur"]
-    except:
+        if response.status_code == 200:
+            data = response.json()
+            if symbol in data and "eur" in data[symbol]:
+                return data[symbol]["eur"]
+            else:
+                logging.warning(f"Symbol '{symbol}' not found: {data}")
+        else:
+            logging.warning(f"CoinGecko status {response.status_code} for {symbol}")
+        return None
+    except Exception as e:
+        logging.error(f"Error fetching {symbol}: {e}")
         return None
 
 def get_btc_price():
@@ -142,7 +145,6 @@ def get_xrp_price():
 def get_bnb_price():
     return get_crypto_price("binancecoin")
 
-# Stock (Yahoo Finance - bilaash)
 def get_stock_price(symbol):
     try:
         ticker = yf.Ticker(symbol)
@@ -150,10 +152,10 @@ def get_stock_price(symbol):
         if hist.empty:
             return None
         return round(hist["Close"].iloc[-1], 2)
-    except:
+    except Exception as e:
+        logging.error(f"Error fetching stock {symbol}: {e}")
         return None
 
-# ETF (Yahoo Finance - bilaash)
 def get_etf_price(symbol):
     return get_stock_price(symbol)
 
@@ -190,14 +192,12 @@ async def send_daily_report():
         logging.warning("USER_ID ma la dejin, warbixin lama diri karo")
         return
     
-    # Crypto qiimaha
     btc = get_btc_price()
     eth = get_eth_price()
     sol = get_sol_price()
     xrp = get_xrp_price()
     bnb = get_bnb_price()
     
-    # Quruxdi
     msg = "📊 *Subax wanaagsan, Aydaruus!*\n\n"
     msg += "💰 *Portfolio-gaaga*\n"
     msg += "━━━━━━━━━━━━━━━━━\n"
@@ -205,35 +205,33 @@ async def send_daily_report():
     
     msg += "🪙 *Crypto (DCA €100/bil)*\n"
     msg += "━━━━━━━━━━━━━━━━━\n"
-    if btc:
+    if btc is not None:
         msg += f"₿ BTC: €{btc:,.0f}\n"
     else:
         msg += "₿ BTC: Laga ma helin\n"
-    if eth:
+    if eth is not None:
         msg += f"⟠ ETH: €{eth:,.0f}\n"
     else:
         msg += "⟠ ETH: Laga ma helin\n"
-    if sol:
+    if sol is not None:
         msg += f"◎ SOL: €{sol:,.0f}\n"
     else:
         msg += "◎ SOL: Laga ma helin\n"
-    if xrp:
+    if xrp is not None:
         msg += f"✕ XRP: €{xrp:,.0f}\n"
     else:
         msg += "✕ XRP: Laga ma helin\n"
-    if bnb:
+    if bnb is not None:
         msg += f"⬡ BNB: €{bnb:,.0f}\n"
     else:
         msg += "⬡ BNB: Laga ma helin\n"
     
-    # Xasuusin DCA (10-da bil)
     today = datetime.now()
     if today.day == 10:
         msg += f"\n📌 *🔔 XASUUSIN DCA!*\n"
-        msg += f"━━━━━━━━━━━━━━━━━\n"
+        msg += "━━━━━━━━━━━━━━━━━\n"
         msg += f"💰 Maanta waa 10-da bil!\n"
         msg += f"💵 Geli €450 (€350 ETF + €100 Crypto)!\n"
-        # Togga xiga
         next_month = today.month + 1 if today.month < 12 else 1
         next_year = today.year if today.month < 12 else today.year + 1
         msg += f"📅 Togga xiga: 10-{next_month:02d}-{next_year}"
@@ -245,7 +243,6 @@ async def send_daily_report():
     msg += f"\n\n📊 *Komenno:* /help"
     
     try:
-        # Bot-ka la soo diro
         app = Application.builder().token(TOKEN).build()
         await app.bot.send_message(chat_id=USER_ID, text=msg, parse_mode="Markdown")
         logging.info("Warbixin maalinle ah waa la diray!")
@@ -258,7 +255,6 @@ async def send_daily_report():
 scheduler = BackgroundScheduler()
 
 def schedule_daily_report():
-    # Maalin kasta 9:00 subax
     scheduler.add_job(
         send_daily_report,
         'cron',
@@ -275,13 +271,11 @@ schedule_daily_report()
 # 9. TELEGRAM KOMENNOT
 # =============================================
 
-# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global USER_ID
     user = update.effective_user
     USER_ID = user.id
     
-    # Tallenna käyttäjä tietokantaan
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
     c.execute("""
@@ -304,11 +298,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# /ping
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🏓 Pong!")
 
-# /help
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 *Käytettävissä olevat komennot:*\n\n"
@@ -324,7 +316,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# /stats
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
@@ -333,7 +324,6 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     await update.message.reply_text(f"👥 Botti waxaa isticmaalay {count} qof.")
 
-# /check
 async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     btc = get_btc_price()
     eth = get_eth_price()
@@ -344,23 +334,28 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📊 *Warbixin degdeg ah*\n"
     msg += "━━━━━━━━━━━━━━━━━\n\n"
     msg += "🪙 *Crypto qiimaha hadda:*\n"
-    if btc:
+    
+    if btc is not None:
         msg += f"₿ BTC: €{btc:,.0f}\n"
     else:
         msg += "₿ BTC: Laga ma helin\n"
-    if eth:
+    
+    if eth is not None:
         msg += f"⟠ ETH: €{eth:,.0f}\n"
     else:
         msg += "⟠ ETH: Laga ma helin\n"
-    if sol:
+    
+    if sol is not None:
         msg += f"◎ SOL: €{sol:,.0f}\n"
     else:
         msg += "◎ SOL: Laga ma helin\n"
-    if xrp:
+    
+    if xrp is not None:
         msg += f"✕ XRP: €{xrp:,.0f}\n"
     else:
         msg += "✕ XRP: Laga ma helin\n"
-    if bnb:
+    
+    if bnb is not None:
         msg += f"⬡ BNB: €{bnb:,.0f}\n"
     else:
         msg += "⬡ BNB: Laga ma helin\n"
@@ -369,29 +364,40 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-# /portfolio
 async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    btc = get_btc_price()
+    eth = get_eth_price()
+    sol = get_sol_price()
+    xrp = get_xrp_price()
+    bnb = get_bnb_price()
+    
     msg = "📊 *Portfolio-gaaga*\n"
     msg += "━━━━━━━━━━━━━━━━━\n\n"
     msg += f"💰 *Wadarta:* €{TOTAL_PORTFOLIO_VALUE:,.2f}\n\n"
     
-    msg += "🪙 *Crypto (DCA €100/bil)*\n"
-    msg += "━━━━━━━━━━━━━━━━━\n"
-    msg += "20% BTC\n"
-    msg += "20% ETH\n"
-    msg += "20% SOL\n"
-    msg += "20% XRP\n"
-    msg += "20% BNB\n\n"
+    msg += "🪙 *Crypto qiimaha hadda:*\n"
+    if btc is not None:
+        msg += f"₿ BTC: €{btc:,.0f}\n"
+    else:
+        msg += "₿ BTC: Laga ma helin\n"
+    if eth is not None:
+        msg += f"⟠ ETH: €{eth:,.0f}\n"
+    else:
+        msg += "⟠ ETH: Laga ma helin\n"
+    if sol is not None:
+        msg += f"◎ SOL: €{sol:,.0f}\n"
+    else:
+        msg += "◎ SOL: Laga ma helin\n"
+    if xrp is not None:
+        msg += f"✕ XRP: €{xrp:,.0f}\n"
+    else:
+        msg += "✕ XRP: Laga ma helin\n"
+    if bnb is not None:
+        msg += f"⬡ BNB: €{bnb:,.0f}\n"
+    else:
+        msg += "⬡ BNB: Laga ma helin\n"
     
-    msg += "📈 *ETF (DCA €350/bil)*\n"
-    msg += "━━━━━━━━━━━━━━━━━\n"
-    msg += f"{len(ETF_LIST)} ETF-yada\n\n"
-    
-    msg += "📈 *Stocks (27 holdings)*\n"
-    msg += "━━━━━━━━━━━━━━━━━\n"
-    msg += "TSLA, AMZN, MSFT, NVDA, KO, CVX, JPM, META, PLTR, AAPL, PFE, PEP, MSTR, PG, JNJ, AVGO, VZ, XOM, AMD, BLK, V, MA, GOOGL, VICI, ABBV, BAC, QCOM\n\n"
-    
-    msg += "📌 *DCA:* 10-da bil kasta\n"
+    msg += "\n📌 *DCA:* 10-da bil kasta\n"
     msg += "💰 €450/bil (€350 ETF + €100 Crypto)"
     
     await update.message.reply_text(msg, parse_mode="Markdown")
@@ -407,7 +413,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # =============================================
-# 11. FLASK (Render Web Service)
+# 11. FLASK
 # =============================================
 flask_app = Flask(__name__)
 
@@ -433,9 +439,6 @@ def run_bot():
     app.run_polling()
 
 if __name__ == "__main__":
-    # Flask - omassa säikeessään
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    
-    # Telegram bot - pääsäikeessä
     run_bot()
