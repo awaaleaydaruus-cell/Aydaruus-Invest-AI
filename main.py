@@ -1,41 +1,40 @@
 import os
-import asyncio
-import threading
-from flask import Flask
+import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 TOKEN = os.environ["BOT_TOKEN"]
-PORT = int(os.environ.get("PORT", 10000))  # Render asettaa PORT-muuttujan[reference:8]
 
-# --- Telegram-botti ---
+# --- Komennot ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Hello, {update.effective_user.first_name}!")
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Pong!")
 
-def run_bot():
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🤖 *Käytettävissä olevat komennot:*\n\n"
+        "/start - Tervehdysviesti\n"
+        "/ping - Ping Pong -testi\n"
+        "/help - Tämä ohje",
+        parse_mode="Markdown"
+    )
+
+# --- Virheidenkäsittely ---
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logging.error(f"Virhe: {context.error}")
+    if update and update.effective_message:
+        await update.effective_message.reply_text("⚠️ Jokin meni pieleen. Yritä uudelleen.")
+
+# --- Pääfunktio ---
+def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ping", ping))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_error_handler(error_handler)
     app.run_polling()
 
-# --- Pieni HTTP-palvelin Renderille ---
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-def health_check():
-    return "Bot is running!", 200
-
-def run_flask():
-    flask_app.run(host='0.0.0.0', port=PORT)
-
-# --- Käynnistä molemmat ---
 if __name__ == "__main__":
-    # Käynnistä Flask omassa säikeessään
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    
-    # Käynnistä botti
-    run_bot()
+    main()
