@@ -136,68 +136,61 @@ TOTAL_INVESTMENTS = 33253.64  # € (PDF-ka ku qoran)
 TOTAL_CRYPTO = 1585.20  # € (Crypto holdings)
 
 # =============================================
-# 5. API-FUNKTIOIT – QIIMAHA HEL (LABA API + Binance)
+# 5. API-FUNKTIOIT – QIIMAHA HEL (VAIN EUROINA)
 # =============================================
 
-def get_eur_usd():
-    """Hel EUR/USD qiimaha"""
-    try:
-        url = "https://api.exchangerate-api.com/v4/latest/USD"
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            return data["rates"]["EUR"]
-    except:
-        return 0.85  # default
-
 def get_crypto_price(symbol):
-    """Hel qiimaha crypto-ga (EUR) - 3 API"""
+    """Hel qiimaha crypto-ga suoraan euroina (€) - 3 API:a"""
     
-    # 1aad: Binance (USD -> EUR)
+    symbol_map = {
+        "bitcoin": "BTC",
+        "ethereum": "ETH",
+        "solana": "SOL",
+        "ripple": "XRP",
+        "binancecoin": "BNB",
+        "sui": "SUI",
+        "stellar": "XLM",
+        "cardano": "ADA",
+        "chainlink": "LINK"
+    }
+    
+    sym = symbol_map.get(symbol, symbol.upper())
+    
+    # --- 1. Kraken (EUR) ---
     try:
-        # Binance wuxuu bixiyaa qiimaha USD
-        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol.upper()}USDT"
+        url = f"https://api.kraken.com/0/public/Ticker?pair={sym}EUR"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            if "price" in data:
-                usd_price = float(data["price"])
-                eur_usd = get_eur_usd()
-                if eur_usd:
-                    return round(usd_price * eur_usd, 2)
-        logging.warning(f"Binance error {symbol}: {response.status_code}")
+            if data.get("result"):
+                for pair, values in data["result"].items():
+                    if "c" in values and len(values["c"]) > 0:
+                        return float(values["c"][0])
     except Exception as e:
-        logging.warning(f"Binance error {symbol}: {e}")
+        logging.warning(f"Kraken error {symbol}: {e}")
     
-    # 2aad: CoinGecko
+    # --- 2. KuCoin (EUR) ---
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json"
-        }
+        url = f"https://api.kucoin.com/api/v1/market/orderbook/level1?symbol={sym}-EUR"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("data") and "price" in data["data"]:
+                return float(data["data"]["price"])
+    except Exception as e:
+        logging.warning(f"KuCoin error {symbol}: {e}")
+    
+    # --- 3. CoinGecko (EUR) ---
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=eur"
-        response = requests.get(url, timeout=15, headers=headers)
+        response = requests.get(url, timeout=10, headers=headers)
         if response.status_code == 200:
             data = response.json()
             if symbol in data and "eur" in data[symbol]:
                 return data[symbol]["eur"]
-        else:
-            logging.warning(f"CoinGecko status {response.status_code} for {symbol}")
     except Exception as e:
         logging.warning(f"CoinGecko error {symbol}: {e}")
-    
-    # 3aad: CryptoCompare
-    try:
-        url = f"https://min-api.cryptocompare.com/data/price?fsym={symbol.upper()}&tsyms=EUR"
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if "EUR" in data:
-                return data["EUR"]
-        else:
-            logging.warning(f"CryptoCompare status {response.status_code} for {symbol}")
-    except Exception as e:
-        logging.warning(f"CryptoCompare error {symbol}: {e}")
     
     return None
 
@@ -250,7 +243,6 @@ async def send_daily_report():
     if USER_ID is None:
         return
     
-    # Hel qiimaha crypto
     btc = get_btc_price()
     eth = get_eth_price()
     sol = get_sol_price()
@@ -293,7 +285,9 @@ async def send_daily_report():
         msg += f"💵 Geli €{DCA_PLAN['amount_eur']}!\n"
         msg += "📊 Qaybinta: BTC 20%, ETH 20%, BNB 20%, SOL 20%, XRP 20%"
     else:
-        msg += f"\n📌 Togga xiga: 10-{today.month+1 if today.month < 12 else 1}-{today.year if today.month < 12 else today.year+1}"
+        next_month = today.month + 1 if today.month < 12 else 1
+        next_year = today.year if today.month < 12 else today.year + 1
+        msg += f"\n📌 Togga xiga: 10-{next_month:02d}-{next_year}"
     
     try:
         app = Application.builder().token(TOKEN).build()
@@ -462,55 +456,54 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 # =============================================
-# 9. TIJABO API (cusub)
+# 9. TIJABO API (EUR)
 # =============================================
 async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Tijaabi API-yada"""
-    msg = "🧪 *Tijaabo API*\n\n"
+    """Tijaabi API-yada (vain EUR)"""
+    msg = "🧪 *Tijaabo API (EUR)*\n\n"
     
-    # 1. Binance
+    # Kraken
     try:
-        url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
+        url = "https://api.kraken.com/0/public/Ticker?pair=BTCEUR"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            msg += f"✅ Binance BTC/USDT: {data['price']}\n"
+            if data.get("result"):
+                for pair, values in data["result"].items():
+                    if "c" in values and len(values["c"]) > 0:
+                        msg += f"✅ Kraken BTC/EUR: {float(values['c'][0]):,.0f} €\n"
+                        break
         else:
-            msg += f"❌ Binance: {response.status_code}\n"
+            msg += f"❌ Kraken: {response.status_code}\n"
     except Exception as e:
-        msg += f"❌ Binance error: {e}\n"
+        msg += f"❌ Kraken error: {e}\n"
     
-    # 2. CoinGecko
+    # KuCoin
+    try:
+        url = "https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=BTC-EUR"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("data") and "price" in data["data"]:
+                msg += f"✅ KuCoin BTC/EUR: {float(data['data']['price']):,.0f} €\n"
+        else:
+            msg += f"❌ KuCoin: {response.status_code}\n"
+    except Exception as e:
+        msg += f"❌ KuCoin error: {e}\n"
+    
+    # CoinGecko
     try:
         url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         response = requests.get(url, timeout=10, headers=headers)
         if response.status_code == 200:
             data = response.json()
-            msg += f"✅ CoinGecko BTC/EUR: {data['bitcoin']['eur']}\n"
+            if "bitcoin" in data and "eur" in data["bitcoin"]:
+                msg += f"✅ CoinGecko BTC/EUR: {data['bitcoin']['eur']:,.0f} €\n"
         else:
             msg += f"❌ CoinGecko: {response.status_code}\n"
     except Exception as e:
         msg += f"❌ CoinGecko error: {e}\n"
-    
-    # 3. CryptoCompare
-    try:
-        url = "https://min-api.cryptocompare.com/data/price?fsym=BTC&tsyms=EUR"
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            msg += f"✅ CryptoCompare BTC/EUR: {data['EUR']}\n"
-        else:
-            msg += f"❌ CryptoCompare: {response.status_code}\n"
-    except Exception as e:
-        msg += f"❌ CryptoCompare error: {e}\n"
-    
-    # 4. Tijaabi get_eur_usd()
-    try:
-        eur_usd = get_eur_usd()
-        msg += f"✅ EUR/USD: {eur_usd}\n"
-    except Exception as e:
-        msg += f"❌ EUR/USD error: {e}\n"
     
     await update.message.reply_text(msg)
 
@@ -548,7 +541,7 @@ def run_bot():
     app.add_handler(CommandHandler("etfs", etfs))
     app.add_handler(CommandHandler("stocks", stocks))
     app.add_handler(CommandHandler("crypto", crypto))
-    app.add_handler(CommandHandler("testapi", testapi))  # <-- cusub
+    app.add_handler(CommandHandler("testapi", testapi))
     app.add_error_handler(error_handler)
     app.run_polling()
 
