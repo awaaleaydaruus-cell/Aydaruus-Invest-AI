@@ -136,23 +136,97 @@ TOTAL_INVESTMENTS = 33253.64  # € (PDF-ka ku qoran)
 TOTAL_CRYPTO = 1585.20  # € (Crypto holdings)
 
 # =============================================
-# 5. API-FUNKTIOIT – QIIMAHA HEL
+# 5. API-FUNKTIOIT – QIIMAHA HEL (LABA API + Binance)
 # =============================================
 
-def get_crypto_price(symbol):
-    """Hel qiimaha crypto-ga (EUR)"""
+def get_eur_usd():
+    """Hel EUR/USD qiimaha"""
     try:
-        url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=eur"
+        url = "https://api.exchangerate-api.com/v4/latest/USD"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return data["rates"]["EUR"]
+    except:
+        return 0.85  # default
+
+def get_crypto_price(symbol):
+    """Hel qiimaha crypto-ga (EUR) - 3 API"""
+    
+    # 1aad: Binance (USD -> EUR)
+    try:
+        # Binance wuxuu bixiyaa qiimaha USD
+        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol.upper()}USDT"
         response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if "price" in data:
+                usd_price = float(data["price"])
+                eur_usd = get_eur_usd()
+                if eur_usd:
+                    return round(usd_price * eur_usd, 2)
+        logging.warning(f"Binance error {symbol}: {response.status_code}")
+    except Exception as e:
+        logging.warning(f"Binance error {symbol}: {e}")
+    
+    # 2aad: CoinGecko
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json"
+        }
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=eur"
+        response = requests.get(url, timeout=15, headers=headers)
         if response.status_code == 200:
             data = response.json()
             if symbol in data and "eur" in data[symbol]:
                 return data[symbol]["eur"]
-        logging.warning(f"CoinGecko fashilantay {symbol}")
-        return None
+        else:
+            logging.warning(f"CoinGecko status {response.status_code} for {symbol}")
     except Exception as e:
-        logging.error(f"Error fetching {symbol}: {e}")
-        return None
+        logging.warning(f"CoinGecko error {symbol}: {e}")
+    
+    # 3aad: CryptoCompare
+    try:
+        url = f"https://min-api.cryptocompare.com/data/price?fsym={symbol.upper()}&tsyms=EUR"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if "EUR" in data:
+                return data["EUR"]
+        else:
+            logging.warning(f"CryptoCompare status {response.status_code} for {symbol}")
+    except Exception as e:
+        logging.warning(f"CryptoCompare error {symbol}: {e}")
+    
+    return None
+
+def get_btc_price():
+    return get_crypto_price("bitcoin")
+
+def get_eth_price():
+    return get_crypto_price("ethereum")
+
+def get_sol_price():
+    return get_crypto_price("solana")
+
+def get_xrp_price():
+    return get_crypto_price("ripple")
+
+def get_bnb_price():
+    return get_crypto_price("binancecoin")
+
+def get_sui_price():
+    return get_crypto_price("sui")
+
+def get_xlm_price():
+    return get_crypto_price("stellar")
+
+def get_ada_price():
+    return get_crypto_price("cardano")
+
+def get_link_price():
+    return get_crypto_price("chainlink")
 
 def get_stock_price(symbol):
     try:
@@ -177,15 +251,15 @@ async def send_daily_report():
         return
     
     # Hel qiimaha crypto
-    btc = get_crypto_price("bitcoin")
-    eth = get_crypto_price("ethereum")
-    sol = get_crypto_price("solana")
-    xrp = get_crypto_price("ripple")
-    bnb = get_crypto_price("binancecoin")
-    sui = get_crypto_price("sui")
-    xlm = get_crypto_price("stellar")
-    ada = get_crypto_price("cardano")
-    link = get_crypto_price("chainlink")
+    btc = get_btc_price()
+    eth = get_eth_price()
+    sol = get_sol_price()
+    xrp = get_xrp_price()
+    bnb = get_bnb_price()
+    sui = get_sui_price()
+    xlm = get_xlm_price()
+    ada = get_ada_price()
+    link = get_link_price()
     
     msg = "📊 *Subax wanaagsan, Aydaruus!*\n\n"
     msg += "💰 *Portfolio-gaaga*\n"
@@ -259,7 +333,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/portfolio - Muuji portfolio-gaaga\n"
         "/etfs - Muuji ETF holdings\n"
         "/stocks - Muuji stock holdings\n"
-        "/crypto - Muuji crypto holdings\n\n"
+        "/crypto - Muuji crypto holdings\n"
+        "/testapi - Tijaabi API-yada\n\n"
         "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin!",
         parse_mode="Markdown"
     )
@@ -278,7 +353,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/portfolio - Muuji portfolio-gaaga\n"
         "/etfs - Muuji ETF holdings\n"
         "/stocks - Muuji stock holdings\n"
-        "/crypto - Muuji crypto holdings\n\n"
+        "/crypto - Muuji crypto holdings\n"
+        "/testapi - Tijaabi API-yada\n\n"
         "💰 *DCA:* €100/bil (10-da bil)\n"
         "📊 *Warbixin maalinle:* 9:00 subax",
         parse_mode="Markdown"
@@ -293,15 +369,15 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"👥 Botti waxaa isticmaalay {count} qof.")
 
 async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    btc = get_crypto_price("bitcoin")
-    eth = get_crypto_price("ethereum")
-    sol = get_crypto_price("solana")
-    xrp = get_crypto_price("ripple")
-    bnb = get_crypto_price("binancecoin")
-    sui = get_crypto_price("sui")
-    xlm = get_crypto_price("stellar")
-    ada = get_crypto_price("cardano")
-    link = get_crypto_price("chainlink")
+    btc = get_btc_price()
+    eth = get_eth_price()
+    sol = get_sol_price()
+    xrp = get_xrp_price()
+    bnb = get_bnb_price()
+    sui = get_sui_price()
+    xlm = get_xlm_price()
+    ada = get_ada_price()
+    link = get_link_price()
     
     msg = "📊 *Warbixin degdeg ah*\n"
     msg += "━━━━━━━━━━━━━━━━━\n\n"
@@ -386,7 +462,60 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 # =============================================
-# 9. VIRHEIDENKÄSITTELY
+# 9. TIJABO API (cusub)
+# =============================================
+async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tijaabi API-yada"""
+    msg = "🧪 *Tijaabo API*\n\n"
+    
+    # 1. Binance
+    try:
+        url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            msg += f"✅ Binance BTC/USDT: {data['price']}\n"
+        else:
+            msg += f"❌ Binance: {response.status_code}\n"
+    except Exception as e:
+        msg += f"❌ Binance error: {e}\n"
+    
+    # 2. CoinGecko
+    try:
+        url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        response = requests.get(url, timeout=10, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            msg += f"✅ CoinGecko BTC/EUR: {data['bitcoin']['eur']}\n"
+        else:
+            msg += f"❌ CoinGecko: {response.status_code}\n"
+    except Exception as e:
+        msg += f"❌ CoinGecko error: {e}\n"
+    
+    # 3. CryptoCompare
+    try:
+        url = "https://min-api.cryptocompare.com/data/price?fsym=BTC&tsyms=EUR"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            msg += f"✅ CryptoCompare BTC/EUR: {data['EUR']}\n"
+        else:
+            msg += f"❌ CryptoCompare: {response.status_code}\n"
+    except Exception as e:
+        msg += f"❌ CryptoCompare error: {e}\n"
+    
+    # 4. Tijaabi get_eur_usd()
+    try:
+        eur_usd = get_eur_usd()
+        msg += f"✅ EUR/USD: {eur_usd}\n"
+    except Exception as e:
+        msg += f"❌ EUR/USD error: {e}\n"
+    
+    await update.message.reply_text(msg)
+
+# =============================================
+# 10. VIRHEIDENKÄSITTELY
 # =============================================
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.error(f"Virhe: {context.error}")
@@ -394,7 +523,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("⚠️ Jokin meni pieleen. Yritä uudelleen.")
 
 # =============================================
-# 10. FLASK
+# 11. FLASK
 # =============================================
 flask_app = Flask(__name__)
 
@@ -406,7 +535,7 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=PORT, debug=False)
 
 # =============================================
-# 11. PÄÄFUNKTIO
+# 12. PÄÄFUNKTIO
 # =============================================
 def run_bot():
     app = Application.builder().token(TOKEN).build()
@@ -419,6 +548,7 @@ def run_bot():
     app.add_handler(CommandHandler("etfs", etfs))
     app.add_handler(CommandHandler("stocks", stocks))
     app.add_handler(CommandHandler("crypto", crypto))
+    app.add_handler(CommandHandler("testapi", testapi))  # <-- cusub
     app.add_error_handler(error_handler)
     app.run_polling()
 
