@@ -54,60 +54,38 @@ init_db()
 USER_ID = None
 
 # =============================================
-# 4. PORTFOLIO-gaaga
+# 4. PORTFOLIO-gaaga (SAX AH)
 # =============================================
-TOTAL_PORTFOLIO_VALUE = 33253.64  # €
+TOTAL_PORTFOLIO_VALUE = 1585.20  # € (kuwaaga sax ah)
 
-ETF_LIST = [
-    {"symbol": "SPY", "name": "iShares Core S&P 500"},
-    {"symbol": "VOO", "name": "Vanguard S&P 500"},
-    {"symbol": "URTH", "name": "iShares Core MSCI World"},
-    {"symbol": "VWRA", "name": "Vanguard FTSE All-World"},
-    {"symbol": "QQQ", "name": "iShares NASDAQ 100"},
-    {"symbol": "SPY5", "name": "SPDR S&P 500"},
-    {"symbol": "VUSA", "name": "Vanguard S&P 500"},
-    {"symbol": "IUSA", "name": "iShares Core S&P 500 Dist"},
-    {"symbol": "EQQQ", "name": "iShares NASDAQ 100"},
-    {"symbol": "SPY4", "name": "SPDR S&P 400 Mid Cap"},
-    {"symbol": "MEUD", "name": "iShares Core MSCI Europe"},
-    {"symbol": "JNQ", "name": "JPMorgan Nasdaq Premium"},
-    {"symbol": "JUEQ", "name": "JPMorgan US Equity Premium"},
-    {"symbol": "JGEP", "name": "JPMorgan Global Equity Premium"},
-    {"symbol": "VHYL", "name": "Vanguard FTSE All-World High Div"},
-    {"symbol": "QYLD", "name": "Global X Nasdaq 100 Covered Call"},
-    {"symbol": "SMH", "name": "VanEck Semiconductor"},
-    {"symbol": "UDVD", "name": "SPDR S&P US Dividend Aristocrats"}
+# Crypto holdings (kuwaaga sax ah)
+CRYPTO_HOLDINGS = [
+    {"symbol": "ethereum", "name": "ETH", "quantity": 0.36953452, "value_eur": 587.15},
+    {"symbol": "bitcoin", "name": "BTC", "quantity": 0.00674376, "value_eur": 379.43},
+    {"symbol": "ripple", "name": "XRP", "quantity": 276.85936581, "value_eur": 269.02},
+    {"symbol": "solana", "name": "SOL", "quantity": 2.0039211, "value_eur": 136.76},
+    {"symbol": "binancecoin", "name": "BNB", "quantity": 0.17903486, "value_eur": 91.00},
+    {"symbol": "sui", "name": "SUI", "quantity": 51.96174103, "value_eur": 33.73},
+    {"symbol": "stellar", "name": "XLM", "quantity": 197.60613615, "value_eur": 33.04},
+    {"symbol": "cardano", "name": "ADA", "quantity": 206.73380095, "value_eur": 30.70},
+    {"symbol": "chainlink", "name": "LINK", "quantity": 3.40208837, "value_eur": 23.86}
 ]
 
-STOCK_LIST = [
-    {"symbol": "TSLA", "name": "Tesla"},
-    {"symbol": "AMZN", "name": "Amazon"},
-    {"symbol": "MSFT", "name": "Microsoft"},
-    {"symbol": "NVDA", "name": "NVIDIA"},
-    {"symbol": "KO", "name": "Coca-Cola"},
-    {"symbol": "CVX", "name": "Chevron"},
-    {"symbol": "JPM", "name": "JPMorgan Chase"},
-    {"symbol": "META", "name": "Meta"},
-    {"symbol": "PLTR", "name": "Palantir"},
-    {"symbol": "AAPL", "name": "Apple"},
-    {"symbol": "PFE", "name": "Pfizer"},
-    {"symbol": "PEP", "name": "PepsiCo"},
-    {"symbol": "MSTR", "name": "Strategy"},
-    {"symbol": "PG", "name": "Procter & Gamble"},
-    {"symbol": "JNJ", "name": "Johnson & Johnson"},
-    {"symbol": "AVGO", "name": "Broadcom"},
-    {"symbol": "VZ", "name": "Verizon"},
-    {"symbol": "XOM", "name": "ExxonMobil"},
-    {"symbol": "AMD", "name": "AMD"},
-    {"symbol": "BLK", "name": "BlackRock"},
-    {"symbol": "V", "name": "Visa"},
-    {"symbol": "MA", "name": "Mastercard"},
-    {"symbol": "GOOGL", "name": "Alphabet"},
-    {"symbol": "VICI", "name": "VICI Properties"},
-    {"symbol": "ABBV", "name": "AbbVie"},
-    {"symbol": "BAC", "name": "Bank of America"},
-    {"symbol": "QCOM", "name": "Qualcomm"}
-]
+# DCA qorshaha (kuwaaga sax ah)
+DCA_PLAN = {
+    "name": "Aydaurus Dream",
+    "amount_eur": 100,  # €100/bil
+    "day": 10,  # 10-da bil
+    "allocation": {
+        "BTC": 20,
+        "ETH": 20,
+        "BNB": 20,
+        "SOL": 20,
+        "XRP": 20
+    },
+    "next_trade": "2026-08-10",
+    "roi": -15.54  # %
+}
 
 # =============================================
 # 5. API-FUNKTIOIT – QIIMAHA HEL
@@ -144,6 +122,18 @@ def get_xrp_price():
 
 def get_bnb_price():
     return get_crypto_price("binancecoin")
+
+def get_sui_price():
+    return get_crypto_price("sui")
+
+def get_xlm_price():
+    return get_crypto_price("stellar")
+
+def get_ada_price():
+    return get_crypto_price("cardano")
+
+def get_link_price():
+    return get_crypto_price("chainlink")
 
 def get_stock_price(symbol):
     try:
@@ -197,14 +187,17 @@ async def send_daily_report():
     sol = get_sol_price()
     xrp = get_xrp_price()
     bnb = get_bnb_price()
+    sui = get_sui_price()
+    xlm = get_xlm_price()
+    ada = get_ada_price()
+    link = get_link_price()
     
     msg = "📊 *Subax wanaagsan, Aydaruus!*\n\n"
-    msg += "💰 *Portfolio-gaaga*\n"
+    msg += "💰 *Portfolio-gaaga (Crypto)*\n"
     msg += "━━━━━━━━━━━━━━━━━\n"
     msg += f"💵 Wadarta: €{TOTAL_PORTFOLIO_VALUE:,.2f}\n\n"
     
-    msg += "🪙 *Crypto (DCA €100/bil)*\n"
-    msg += "━━━━━━━━━━━━━━━━━\n"
+    msg += "🪙 *Holdings-kaaga:*\n"
     if btc is not None:
         msg += f"₿ BTC: €{btc:,.0f}\n"
     else:
@@ -225,20 +218,32 @@ async def send_daily_report():
         msg += f"⬡ BNB: €{bnb:,.0f}\n"
     else:
         msg += "⬡ BNB: Laga ma helin\n"
+    if sui is not None:
+        msg += f"🔷 SUI: €{sui:,.2f}\n"
+    else:
+        msg += "🔷 SUI: Laga ma helin\n"
+    if xlm is not None:
+        msg += f"⭐ XLM: €{xlm:,.2f}\n"
+    else:
+        msg += "⭐ XLM: Laga ma helin\n"
+    if ada is not None:
+        msg += f"🟣 ADA: €{ada:,.2f}\n"
+    else:
+        msg += "🟣 ADA: Laga ma helin\n"
+    if link is not None:
+        msg += f"🔗 LINK: €{link:,.2f}\n"
+    else:
+        msg += "🔗 LINK: Laga ma helin\n"
+    
+    msg += f"\n📌 *DCA qorshaha:* {DCA_PLAN['name']}\n"
+    msg += f"💰 €{DCA_PLAN['amount_eur']}/bil\n"
+    msg += f"📅 10-da bil kasta\n"
     
     today = datetime.now()
     if today.day == 10:
-        msg += f"\n📌 *🔔 XASUUSIN DCA!*\n"
-        msg += "━━━━━━━━━━━━━━━━━\n"
-        msg += f"💰 Maanta waa 10-da bil!\n"
-        msg += f"💵 Geli €450 (€350 ETF + €100 Crypto)!\n"
-        next_month = today.month + 1 if today.month < 12 else 1
-        next_year = today.year if today.month < 12 else today.year + 1
-        msg += f"📅 Togga xiga: 10-{next_month:02d}-{next_year}"
-    else:
-        next_month = today.month + 1 if today.month < 12 else 1
-        next_year = today.year if today.month < 12 else today.year + 1
-        msg += f"\n📌 *Togga xiga DCA:* 10-{next_month:02d}-{next_year}"
+        msg += f"\n🔔 *XASUUSIN! Maanta waa 10-da bil!*\n"
+        msg += f"💵 Geli €{DCA_PLAN['amount_eur']}!\n"
+        msg += f"📊 Qaybinta: BTC 20%, ETH 20%, BNB 20%, SOL 20%, XRP 20%"
     
     msg += f"\n\n📊 *Komenno:* /help"
     
@@ -310,8 +315,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/stats - Näytä käyttäjämäärä\n"
         "/check - Warbixin degdeg ah (crypto)\n"
         "/portfolio - Muuji portfolio-gaaga\n\n"
-        "💰 *DCA:* €450/bil (10-da bil)\n"
-        "🪙 *Crypto:* BTC, ETH, SOL, XRP, BNB\n"
+        "💰 *DCA:* €100/bil (10-da bil)\n"
+        "🪙 *Crypto:* BTC, ETH, SOL, XRP, BNB, SUI, XLM, ADA, LINK\n"
         "📊 *Warbixin maalinle:* 9:00 subax",
         parse_mode="Markdown"
     )
@@ -330,6 +335,10 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sol = get_sol_price()
     xrp = get_xrp_price()
     bnb = get_bnb_price()
+    sui = get_sui_price()
+    xlm = get_xlm_price()
+    ada = get_ada_price()
+    link = get_link_price()
     
     msg = "📊 *Warbixin degdeg ah*\n"
     msg += "━━━━━━━━━━━━━━━━━\n\n"
@@ -360,6 +369,26 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         msg += "⬡ BNB: Laga ma helin\n"
     
+    if sui is not None:
+        msg += f"🔷 SUI: €{sui:,.2f}\n"
+    else:
+        msg += "🔷 SUI: Laga ma helin\n"
+    
+    if xlm is not None:
+        msg += f"⭐ XLM: €{xlm:,.2f}\n"
+    else:
+        msg += "⭐ XLM: Laga ma helin\n"
+    
+    if ada is not None:
+        msg += f"🟣 ADA: €{ada:,.2f}\n"
+    else:
+        msg += "🟣 ADA: Laga ma helin\n"
+    
+    if link is not None:
+        msg += f"🔗 LINK: €{link:,.2f}\n"
+    else:
+        msg += "🔗 LINK: Laga ma helin\n"
+    
     msg += f"\n💵 Portfolio wadarta: €{TOTAL_PORTFOLIO_VALUE:,.2f}"
     
     await update.message.reply_text(msg, parse_mode="Markdown")
@@ -370,12 +399,16 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sol = get_sol_price()
     xrp = get_xrp_price()
     bnb = get_bnb_price()
+    sui = get_sui_price()
+    xlm = get_xlm_price()
+    ada = get_ada_price()
+    link = get_link_price()
     
     msg = "📊 *Portfolio-gaaga*\n"
     msg += "━━━━━━━━━━━━━━━━━\n\n"
     msg += f"💰 *Wadarta:* €{TOTAL_PORTFOLIO_VALUE:,.2f}\n\n"
     
-    msg += "🪙 *Crypto qiimaha hadda:*\n"
+    msg += "🪙 *Crypto holdings-kaaga:*\n"
     if btc is not None:
         msg += f"₿ BTC: €{btc:,.0f}\n"
     else:
@@ -396,9 +429,26 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"⬡ BNB: €{bnb:,.0f}\n"
     else:
         msg += "⬡ BNB: Laga ma helin\n"
+    if sui is not None:
+        msg += f"🔷 SUI: €{sui:,.2f}\n"
+    else:
+        msg += "🔷 SUI: Laga ma helin\n"
+    if xlm is not None:
+        msg += f"⭐ XLM: €{xlm:,.2f}\n"
+    else:
+        msg += "⭐ XLM: Laga ma helin\n"
+    if ada is not None:
+        msg += f"🟣 ADA: €{ada:,.2f}\n"
+    else:
+        msg += "🟣 ADA: Laga ma helin\n"
+    if link is not None:
+        msg += f"🔗 LINK: €{link:,.2f}\n"
+    else:
+        msg += "🔗 LINK: Laga ma helin\n"
     
-    msg += "\n📌 *DCA:* 10-da bil kasta\n"
-    msg += "💰 €450/bil (€350 ETF + €100 Crypto)"
+    msg += "\n📌 *DCA qorshaha:*\n"
+    msg += f"💰 €{DCA_PLAN['amount_eur']}/bil (10-da bil)\n"
+    msg += "📊 Qaybinta: BTC 20%, ETH 20%, BNB 20%, SOL 20%, XRP 20%"
     
     await update.message.reply_text(msg, parse_mode="Markdown")
 
