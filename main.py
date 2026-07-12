@@ -539,8 +539,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/testapi - Tijaabi API-yada\n"
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
-        "/dividends - Menneet osingot (TODELLISET, kk+vuosi)\n"
-        "/upcoming - Tulevat osingot (arvio historiasta)\n"
+        "/dividends - Tulevat osingot, kk-ryhmiteltynä\n"
         "/recommend - Sijoitusanalyysi & suositukset\n\n"
         "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin!",
         parse_mode="Markdown"
@@ -564,8 +563,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/testapi - Tijaabi API-yada\n"
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
-        "/dividends - Menneet osingot (TODELLISET, kk+vuosi)\n"
-        "/upcoming - Tulevat osingot (arvio historiasta)\n"
+        "/dividends - Tulevat osingot, kk-ryhmiteltynä\n"
         "/recommend - Sijoitusanalyysi & suositukset\n\n"
         "💰 *DCA:* €100/bil (crypto) + €450/kk (Trading 212)\n"
         "📊 *Warbixin maalinle:* 9:00 subax",
@@ -611,10 +609,7 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg += f"🪙 *Crypto holdings:* {len(CRYPTO_HOLDINGS)} holdings\n\n"
 
     msg += f"📊 *Trading 212 -kuukausisijoitus*\n"
-    msg += f"👤 *{TRADING212_PLAN['name']}*\n"
-    msg += f"💰 €{TRADING212_PLAN['amount_eur']}/kk (10. päivä)\n"
-    msg += f"📈 Holdings: {TRADING212_PLAN['holdings']} kpl\n"
-    msg += f"💵 Arvo: €{TRADING212_PLAN['total_value']:,.2f}\n\n"
+    msg += f"💰 €{TRADING212_PLAN['amount_eur']}/kk (10. päivä)\n\n"
 
     msg += "👨‍👩‍👧‍👦 *Perheen holdings*\n"
     for member in FAMILY_HOLDINGS:
@@ -709,92 +704,65 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 14. MENNEET OSINGOT — kuka maksoi, milloin, kuinka paljon
 #     + kuukausittain + koko vuosi
 # =============================================
+FI_MONTHS = {
+    "01": "Tammikuu", "02": "Helmikuu", "03": "Maaliskuu", "04": "Huhtikuu",
+    "05": "Toukokuu", "06": "Kesäkuu", "07": "Heinäkuu", "08": "Elokuu",
+    "09": "Syyskuu", "10": "Lokakuu", "11": "Marraskuu", "12": "Joulukuu",
+}
+
 async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        dividend_list, total_all_time = get_dividend_details()
-
-        if not dividend_list:
-            await update.message.reply_text(
-                "⚠️ Osinkotietoja ei löytynyt. Varmista, että dividends.csv on tallennettu botin hakemistoon."
-            )
-            return
-
-        monthly, yearly_total = get_dividends_by_month(dividend_list)
-
-        max_per_msg = 12
-        sent = 0
-        total_items = len(dividend_list)
-
-        while sent < total_items:
-            chunk = dividend_list[sent:sent + max_per_msg]
-            sent += len(chunk)
-
-            msg = "💰 *Menneet osinkomaksut (Trading 212)*\n"
-            msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
-            for div in chunk:
-                msg += f"📅 *{div['date']}* — 💰 *€{div['amount']:,.2f}*\n"
-                msg += f"   🔹 Maksaja: *{div['name']}* ({div['symbol']})\n"
-                msg += f"   📦 {div['quantity']:.4f} kpl × {div['per_share']:.4f} {div['currency']}/osake\n"
-                if div['tax'] > 0:
-                    msg += f"   🏦 Lähdevero: €{div['tax']:.2f}\n"
-                msg += "\n"
-
-            if sent >= total_items:
-                msg += "━━━━━━━━━━━━━━━━━━━━━━\n"
-                msg += "📊 *Osingot kuukausittain:*\n"
-                for month in sorted(monthly.keys(), key=lambda m: datetime.strptime(m, '%m/%Y')):
-                    msg += f"   📅 {month}: €{monthly[month]:,.2f}\n"
-                msg += f"\n💰 *Osingot yhteensä (koko ajanjakso):* €{total_all_time:,.2f}"
-                msg += "\nℹ️ *Lähde:* Trading 212 -osinkohistoria (dividends.csv)"
-
-            await update.message.reply_text(msg, parse_mode="Markdown")
-
-    except Exception as e:
-        logging.error(f"Virhe dividends-komennossa: {e}")
-        await update.message.reply_text(f"⚠️ Virhe haettaessa osinkoja: {str(e)[:150]}")
-
-# =============================================
-# 15. TULEVAT OSINGOT — arvio historian perusteella
-#     (kuka maksaa, milloin maksaa, mitä maksaa) + kk + vuosi
-# =============================================
-async def upcoming(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tulevat osingot, siististi kuukausittain ryhmiteltynä:
+    maksupäivä-järjestyksessä kuka maksaa ja paljonko, kuukausi kerralla + kk-summa,
+    lopussa koko vuoden yhteissumma."""
     try:
         projected, monthly, yearly_total = get_upcoming_dividends_estimated()
 
         if not projected:
             await update.message.reply_text(
-                "⚠️ Tulevia osinkoja ei voitu arvioida.\n"
+                "⚠️ Osinkoja ei voitu arvioida.\n"
                 "Varmista, että dividends.csv sisältää vähintään 2 maksua per osake/ETF."
             )
             return
 
-        max_per_msg = 12
-        sent = 0
-        while sent < len(projected):
-            chunk = projected[sent:sent + max_per_msg]
-            sent += len(chunk)
+        # Ryhmittele kuukausittain, säilytä maksupäiväjärjestys kunkin kuukauden sisällä
+        by_month = {}
+        for div in projected:
+            key = div['date_sort'].strftime('%m/%Y')
+            by_month.setdefault(key, []).append(div)
 
-            msg = "📅 *ARVIOIDUT TULEVAT OSINGOT*\n"
-            msg += "ℹ️ Perustuu historialliseen maksutahtiin — T212 API ei tue tulevia osinkoja\n"
-            msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        months_sorted = sorted(by_month.keys(), key=lambda m: datetime.strptime(m, '%m/%Y'))
 
-            for div in chunk:
-                msg += f"📅 *{div['date']}* — 💰 *€{div['amount']:,.2f}*\n"
-                msg += f"   🔹 Maksaja: *{div['name']}* ({div['symbol']})\n"
-                msg += f"   📈 ~{div['per_share']} €/osake, maksuväli ~{div['frequency_days']} pv\n\n"
+        header = "💰 *Dividends*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        blocks = []
+        for key in months_sorted:
+            month_num, year = key.split('/')
+            month_name = FI_MONTHS.get(month_num, month_num)
+            month_total = monthly[key]
+            block = f"📅 *{month_name} {year}* — €{month_total:,.2f}\n"
+            for div in by_month[key]:
+                block += f"   {div['date']}  •  {div['name']} ({div['symbol']})  →  €{div['amount']:,.2f}\n"
+            blocks.append(block)
 
-            if sent >= len(projected):
-                msg += "━━━━━━━━━━━━━━━━━━━━━━\n"
-                msg += "📊 *Kuukausittain (arvio):*\n"
-                for month in sorted(monthly.keys(), key=lambda m: datetime.strptime(m, '%m/%Y')):
-                    msg += f"   📅 {month}: €{monthly[month]:,.2f}\n"
-                msg += f"\n💰 *Yhteensä seuraavat 12 kk (arvio):* €{yearly_total:,.2f}"
+        footer = f"\n💰 *Yhteensä (12 kk):* €{yearly_total:,.2f}"
 
+        # Kokoa viestit n. 3500 merkin paloihin kuukausirajoilla
+        max_len = 3500
+        current = header
+        messages = []
+        for block in blocks:
+            if len(current) + len(block) > max_len:
+                messages.append(current)
+                current = block
+            else:
+                current += block + "\n"
+        current += footer
+        messages.append(current)
+
+        for msg in messages:
             await update.message.reply_text(msg, parse_mode="Markdown")
 
     except Exception as e:
-        logging.error(f"Virhe upcoming-komennossa: {e}")
+        logging.error(f"Virhe dividends-komennossa: {e}")
         await update.message.reply_text(f"⚠️ Virhe: {str(e)[:150]}")
 
 # =============================================
@@ -885,7 +853,6 @@ def run_bot():
     app.add_handler(CommandHandler("news", news))
     app.add_handler(CommandHandler("goal", goal))
     app.add_handler(CommandHandler("dividends", dividends))
-    app.add_handler(CommandHandler("upcoming", upcoming))
     app.add_handler(CommandHandler("recommend", recommend))
     app.add_error_handler(error_handler)
     app.run_polling()
