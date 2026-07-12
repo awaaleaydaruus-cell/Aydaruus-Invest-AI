@@ -235,7 +235,6 @@ def get_etf_price(symbol):
 # =============================================
 
 def get_stock_historical(symbol, days=30):
-    """Hae osakkeen/ETF:n hinta days päivää sitten"""
     try:
         ticker = yf.Ticker(symbol)
         hist = ticker.history(period=f"{days}d")
@@ -246,7 +245,6 @@ def get_stock_historical(symbol, days=30):
     return None
 
 def get_crypto_historical(symbol, days=30):
-    """Hae krypton hinta days päivää sitten (CoinGecko)"""
     try:
         url = f"https://api.coingecko.com/api/v3/coins/{symbol}/market_chart?vs_currency=eur&days={days}"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -260,12 +258,9 @@ def get_crypto_historical(symbol, days=30):
     return None
 
 def get_recommendation(current_price, old_price, name):
-    """Palauttaa suosituksen: BUY, HOLD, SELL"""
     if current_price is None or old_price is None or old_price == 0:
         return "❓", "Ei tarpeeksi dataa"
-    
     change = ((current_price - old_price) / old_price) * 100
-    
     if change >= 10:
         return "🔴 SELL", f"+{change:.1f}% (kallis)"
     elif change <= -10:
@@ -274,75 +269,137 @@ def get_recommendation(current_price, old_price, name):
         return "🟡 HOLD", f"{change:+.1f}% (neutraali)"
 
 # =============================================
-# 7. OSINGOT (TULEVAT MAKSUT)
+# 7. OSINGOT – OSAKKEET JA ETF:T (VAIN JAKAVAT)
 # =============================================
-
-def get_dividend_income():
-    total_yearly = 0.0
-    upcoming = []
-    for stock in STOCK_HOLDINGS:
-        try:
-            ticker = yf.Ticker(stock["symbol"])
-            info = ticker.info
-            div_rate = info.get("dividendRate", 0)
-            if div_rate and div_rate > 0:
-                yearly = div_rate * stock["quantity"]
-                total_yearly += yearly
-                ex_date = info.get("exDividendDate")
-                if ex_date:
-                    upcoming.append((stock["symbol"], ex_date, yearly))
-        except:
-            pass
-    return total_yearly, upcoming
 
 def get_dividend_details():
     """
-    Palauttaa tulevat osinkotiedot eriteltynä.
-    Käyttää yfinance:in info-kenttiä: dividendRate, exDividendDate, dividendDate.
+    Palauttaa osinkotiedot eriteltynä.
+    - Osakkeet: haetaan yfinance-dividendihistoriasta
+    - ETF:t: haetaan erikseen (vain jakavat ETF:t)
     """
     dividend_list = []
     total_yearly = 0.0
 
+    # --- 1. OSAKKEET ---
     for stock in STOCK_HOLDINGS:
         try:
             ticker = yf.Ticker(stock["symbol"])
+            div_hist = ticker.dividends
+            if div_hist.empty:
+                continue
+
+            last_div_amount = div_hist.iloc[-1]
+            last_div_date = div_hist.index[-1]
+            yearly_divs = div_hist.tail(4)
+            yearly_total_per_share = yearly_divs.sum()
+            yearly_total = yearly_total_per_share * stock["quantity"]
+            total_yearly += yearly_total
+
+            ex_date = last_div_date.strftime('%d.%m.%Y')
+            
             info = ticker.info
-
-            # Haetaan osinko/osake
-            div_rate = info.get("dividendRate", 0)
-            ex_date_ts = info.get("exDividendDate")
-            payout_date_ts = info.get("dividendDate")
-
-            if div_rate and div_rate > 0:
-                yearly_total = div_rate * stock["quantity"]
-                total_yearly += yearly_total
-
-                if ex_date_ts:
-                    ex_date = datetime.fromtimestamp(ex_date_ts).strftime('%d.%m.%Y')
-                else:
-                    ex_date = "Ei tiedossa"
-
-                if payout_date_ts:
-                    payout_date = datetime.fromtimestamp(payout_date_ts).strftime('%d.%m.%Y')
-                else:
-                    payout_date = "Ilmoitetaan myöhemmin"
-
-                dividend_list.append({
-                    "symbol": stock["symbol"],
-                    "name": stock["name"],
-                    "dividend_per_share": round(div_rate, 4),
-                    "yearly_total": round(yearly_total, 2),
-                    "ex_date": ex_date,
-                    "payout_date": payout_date,
-                    "quantity": stock["quantity"]
-                })
+            payout_ts = info.get("dividendDate")
+            if payout_ts:
+                payout_date = datetime.fromtimestamp(payout_ts).strftime('%d.%m.%Y')
             else:
-                logging.info(f"{stock['symbol']}: Ei osinkoa tai tieto puuttuu")
+                payout_est = last_div_date + timedelta(days=30)
+                payout_date = payout_est.strftime('%d.%m.%Y') + " (arvio)"
+
+            dividend_list.append({
+                "symbol": stock["symbol"],
+                "name": stock["name"],
+                "type": "Osake",
+                "dividend_per_share": round(last_div_amount, 4),
+                "yearly_total": round(yearly_total, 2),
+                "ex_date": ex_date,
+                "payout_date": payout_date,
+                "quantity": stock["quantity"]
+            })
         except Exception as e:
             logging.error(f"Virhe haettaessa osinkoa {stock['symbol']}: {e}")
 
+    # --- 2. ETF:T (VAIN JAKAVAT) ---
+    # Jakavat ETF:t – nämä maksavat osinkoa
+    DISTRIBUTING_ETFS = [
+        "iShares Core S&P 500 Dist",
+        "SPDR S&P US Dividend Aristocrats",
+        "Global X Nasdaq 100 Covered Call",
+        "JPMorgan Nasdaq Premium",
+        "JPMorgan US Equity Premium",
+        "JPMorgan Global Equity Premium",
+        "Vanguard FTSE All-World High Div",
+        "VanEck Semiconductor",
+        "iShares Core S&P 500",
+        "Vanguard S&P 500",
+        "iShares NASDAQ 100",
+        "SPDR S&P 500",
+        "SPDR S&P 400 Mid Cap",
+        "iShares Core MSCI Europe"
+    ]
+
+    ETF_TICKER_MAP = {
+        "iShares Core S&P 500 Dist": "IUSA",
+        "SPDR S&P US Dividend Aristocrats": "UDVD",
+        "Global X Nasdaq 100 Covered Call": "QYLD",
+        "JPMorgan Nasdaq Premium": "JNQ",
+        "JPMorgan US Equity Premium": "JUEQ",
+        "JPMorgan Global Equity Premium": "JGEP",
+        "Vanguard FTSE All-World High Div": "VHYL",
+        "VanEck Semiconductor": "SMH",
+        "iShares Core S&P 500": "SPY",
+        "Vanguard S&P 500": "VOO",
+        "iShares NASDAQ 100": "QQQ",
+        "SPDR S&P 500": "SPY5",
+        "SPDR S&P 400 Mid Cap": "SPY4",
+        "iShares Core MSCI Europe": "MEUD"
+    }
+
+    for etf in ETF_HOLDINGS:
+        if etf["name"] in DISTRIBUTING_ETFS:
+            ticker = ETF_TICKER_MAP.get(etf["name"])
+            if ticker:
+                try:
+                    etf_ticker = yf.Ticker(ticker)
+                    div_hist = etf_ticker.dividends
+                    if div_hist.empty:
+                        continue
+                    
+                    last_div_amount = div_hist.iloc[-1]
+                    last_div_date = div_hist.index[-1]
+                    yearly_divs = div_hist.tail(4)
+                    yearly_total_per_share = yearly_divs.sum()
+                    yearly_total = yearly_total_per_share * etf["quantity"]
+                    total_yearly += yearly_total
+
+                    ex_date = last_div_date.strftime('%d.%m.%Y')
+                    
+                    info = etf_ticker.info
+                    payout_ts = info.get("dividendDate")
+                    if payout_ts:
+                        payout_date = datetime.fromtimestamp(payout_ts).strftime('%d.%m.%Y')
+                    else:
+                        payout_est = last_div_date + timedelta(days=30)
+                        payout_date = payout_est.strftime('%d.%m.%Y') + " (arvio)"
+
+                    dividend_list.append({
+                        "symbol": ticker,
+                        "name": etf["name"],
+                        "type": "ETF",
+                        "dividend_per_share": round(last_div_amount, 4),
+                        "yearly_total": round(yearly_total, 2),
+                        "ex_date": ex_date,
+                        "payout_date": payout_date,
+                        "quantity": etf["quantity"]
+                    })
+                except Exception as e:
+                    logging.error(f"Virhe haettaessa ETF-osinkoa {etf['name']}: {e}")
+        else:
+            # Kasvava ETF (Acc) – ei maksa osinkoa
+            logging.info(f"ETF {etf['name']} on kasvava (Acc) – ei osinkoa.")
+
     dividend_list.sort(key=lambda x: x.get("ex_date", "99.99.9999"))
-    return dividend_list, total_yearly
+    return dividend_list, round(total_yearly, 2)
 
 # =============================================
 # 8. TAVOITE (100k)
@@ -403,7 +460,7 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
-# 10. WARBIXIN MAALINLE (Scheduler)
+# 10. WARBIXIN MAALINLE
 # =============================================
 
 async def send_daily_report():
@@ -445,12 +502,13 @@ async def send_daily_report():
     if link: msg += f"🔗 LINK: €{link:,.2f}\n"
     else: msg += "🔗 LINK: Laga ma helin\n"
 
-    div_total, _ = get_dividend_income()
+    # Osingot
+    dividend_list, total_div = get_dividend_details()
     months, target_date = calculate_goal(TOTAL_INVESTMENTS, TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur'])
     msg += f"\n🎯 *100k € tavoite*\n"
     msg += f"📈 Puuttuu: €{100000 - TOTAL_INVESTMENTS:,.2f}\n"
     msg += f"📅 Arvio: {target_date.strftime('%d.%m.%Y')} ({months} kk)\n"
-    msg += f"💵 Osingot/v: €{div_total:,.2f}\n"
+    msg += f"💵 Osingot/v (arvio): €{total_div:,.2f}\n"
 
     today = datetime.now()
     if today.day == 10:
@@ -468,7 +526,7 @@ async def send_daily_report():
         logging.error(f"Warbixin maalinle ah waa ay fashilantay: {e}")
 
 # =============================================
-# 11. QORSHEYNTA (Scheduler)
+# 11. QORSHEYNTA
 # =============================================
 scheduler = BackgroundScheduler()
 scheduler.add_job(send_daily_report, 'cron', hour=9, minute=0, id="daily_report", replace_existing=True)
@@ -693,32 +751,39 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+# =============================================
+# 13. OSINGOT (KORJATTU – HISTORIA + ETF:T)
+# =============================================
 async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dividend_list, total_yearly = get_dividend_details()
 
     if not dividend_list:
         await update.message.reply_text(
             "⚠️ Osinkotietoja ei löytynyt tällä hetkellä.\n"
-            "Varmista, että omistat osinkoa maksavia osakkeita."
+            "Varmista, että omistat osinkoa maksavia osakkeita tai ETF:iä."
         )
         return
 
-    msg = "💰 *Tulevat osinkomaksut*\n"
+    msg = "💰 *Tulevat osinkomaksut (historian perusteella)*\n"
     msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
     for div in dividend_list:
         msg += f"🔹 *{div['name']}* ({div['symbol']})\n"
-        msg += f"   💰 Osinko/osake: €{div['dividend_per_share']:.4f}\n"
-        msg += f"   📦 Sinä saat: {div['quantity']:.2f} × €{div['dividend_per_share']:.4f} = *€{div['yearly_total']:,.2f}*\n"
-        msg += f"   📅 Ex-date (omistuspäivä): {div['ex_date']}\n"
+        msg += f"   📊 Tyyppi: {div['type']}\n"
+        msg += f"   💰 Viimeisin osinko/osake: €{div['dividend_per_share']:.4f}\n"
+        msg += f"   📦 Sinä saat (12 kk): {div['quantity']:.2f} × €{div['yearly_total']/div['quantity']:.4f} = *€{div['yearly_total']:,.2f}*\n"
+        msg += f"   📅 Ex-date: {div['ex_date']}\n"
         msg += f"   💳 Maksupäivä: {div['payout_date']}\n"
         msg += "\n"
 
     msg += f"📊 *Osinkoja yhteensä vuodessa:* €{total_yearly:,.2f}"
-    msg += "\n\nℹ️ *Huom:* Ex-date on päivä, jolloin osakkeen on oltava omistuksessa. Maksupäivä on päivä, jolloin rahat tulevat tilille."
+    msg += "\n\nℹ️ *Huom:* Kasvavat ETF:t (Acc) eivät maksa osinkoa, vaan sijoittavat uudelleen."
 
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+# =============================================
+# 14. SUOSITUKSET (BUY/HOLD/SELL)
+# =============================================
 async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📊 *Sijoitusanalyysi & suositukset*\n"
     msg += "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -799,7 +864,7 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
-# 13. VIRHEIDENKÄSITTELY
+# 15. VIRHEIDENKÄSITTELY
 # =============================================
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.error(f"Virhe: {context.error}")
@@ -807,7 +872,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("⚠️ Jokin meni pieleen. Yritä uudelleen.")
 
 # =============================================
-# 14. FLASK
+# 16. FLASK
 # =============================================
 flask_app = Flask(__name__)
 
@@ -819,7 +884,7 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=PORT, debug=False)
 
 # =============================================
-# 15. PÄÄFUNKTIO
+# 17. PÄÄFUNKTIO
 # =============================================
 def run_bot():
     app = Application.builder().token(TOKEN).build()
