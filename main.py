@@ -162,6 +162,40 @@ FAMILY_HOLDINGS = [
 TOTAL_INVESTMENTS = 33253.64
 TOTAL_CRYPTO = sum(c["value_eur"] for c in CRYPTO_HOLDINGS)
 
+# =============================================
+# 4B. HORMUUD SHARES — TÄYSIN ERILLÄÄN TRADING212:STA JA GOAL-LASKENNASTA
+# =============================================
+# Kaikki luvut DOLLAREISSA ($), suoraan PDF-projektiotaulukosta.
+HORMUUD_PROJECTION = [
+    {"nro": 0,  "year": 2024, "start_capital": 10000, "annual_return": None,  "cash_payment": None,  "monthly_payment": None, "capital_addition": None, "capital_growth": None,  "value": 0,      "paid_date": None,      "note": "Aloitus vuosi"},
+    {"nro": 1,  "year": 2025, "start_capital": 10000, "annual_return": 2784,  "cash_payment": 1531,  "monthly_payment": 128,  "capital_addition": 1253, "capital_growth": 11253, "value": 37134,  "paid_date": "25.3.2025", "note": "Sijoitettu raha 37 000€ vuonna 2025"},
+    {"nro": 2,  "year": 2026, "start_capital": 23364, "annual_return": 5719,  "cash_payment": 2860,  "monthly_payment": 238,  "capital_addition": 2860, "capital_growth": 26224, "value": 86538,  "paid_date": "9.3.2026",  "note": None},
+    {"nro": 3,  "year": 2027, "start_capital": 23364, "annual_return": 5719,  "cash_payment": 2860,  "monthly_payment": 238,  "capital_addition": 2860, "capital_growth": 26224, "value": 86538,  "paid_date": None,      "note": "Uudelleen sijoitettu 20 000€ vuonna 2026"},
+    {"nro": 4,  "year": 2028, "start_capital": 26222, "annual_return": 6419,  "cash_payment": 3209,  "monthly_payment": 267,  "capital_addition": 3209, "capital_growth": 29431, "value": 97123,  "paid_date": None,      "note": None},
+    {"nro": 5,  "year": 2029, "start_capital": 29431, "annual_return": 7204,  "cash_payment": 3602,  "monthly_payment": 300,  "capital_addition": 3602, "capital_growth": 33033, "value": 109009, "paid_date": None,      "note": None},
+    {"nro": 6,  "year": 2030, "start_capital": 33033, "annual_return": 8086,  "cash_payment": 4043,  "monthly_payment": 337,  "capital_addition": 4043, "capital_growth": 37076, "value": 122351, "paid_date": None,      "note": None},
+    {"nro": 7,  "year": 2031, "start_capital": 37076, "annual_return": 9076,  "cash_payment": 4538,  "monthly_payment": 378,  "capital_addition": 4538, "capital_growth": 41614, "value": 137325, "paid_date": None,      "note": None},
+    {"nro": 8,  "year": 2032, "start_capital": 41614, "annual_return": 10186, "cash_payment": 5093,  "monthly_payment": 424,  "capital_addition": 5093, "capital_growth": 46707, "value": 154134, "paid_date": None,      "note": None},
+    {"nro": 9,  "year": 2033, "start_capital": 46707, "annual_return": 11433, "cash_payment": 5717,  "monthly_payment": 476,  "capital_addition": 5717, "capital_growth": 52424, "value": 172998, "paid_date": None,      "note": None},
+    {"nro": 10, "year": 2034, "start_capital": 52424, "annual_return": 14154, "cash_payment": 7077,  "monthly_payment": 590,  "capital_addition": 7077, "capital_growth": 59501, "value": 196354, "paid_date": None,      "note": None},
+    {"nro": 11, "year": 2035, "start_capital": 53326, "annual_return": 14398, "cash_payment": 7199,  "monthly_payment": 600,  "capital_addition": 7199, "capital_growth": 60525, "value": 199733, "paid_date": None,      "note": None},
+    {"nro": 12, "year": 2036, "start_capital": 60525, "annual_return": 16342, "cash_payment": 8171,  "monthly_payment": 681,  "capital_addition": 8171, "capital_growth": 68696, "value": 226696, "paid_date": None,      "note": None},
+    {"nro": 13, "year": 2037, "start_capital": 68696, "annual_return": 18548, "cash_payment": 9274,  "monthly_payment": 773,  "capital_addition": 9274, "capital_growth": 77970, "value": 257301, "paid_date": None,      "note": None},
+    {"nro": 14, "year": 2038, "start_capital": 77970, "annual_return": 21052, "cash_payment": 10526, "monthly_payment": 877,  "capital_addition": 10526,"capital_growth": 88496, "value": 292037, "paid_date": None,      "note": None},
+    {"nro": 15, "year": 2039, "start_capital": 88496, "annual_return": 23894, "cash_payment": 11947, "monthly_payment": 996,  "capital_addition": 11947,"capital_growth": 100443,"value": 331462, "paid_date": None,      "note": None},
+    {"nro": 16, "year": 2040, "start_capital": 100443,"annual_return": 27120, "cash_payment": 13560, "monthly_payment": 1130, "capital_addition": 13560,"capital_growth": 114003,"value": 376209, "paid_date": None,      "note": None},
+    {"nro": 17, "year": 2041, "start_capital": 114003,"annual_return": 30781, "cash_payment": 15390, "monthly_payment": 1283, "capital_addition": 15390,"capital_growth": 129393,"value": 426998, "paid_date": None,      "note": None},
+    {"nro": 18, "year": 2042, "start_capital": 129393,"annual_return": 34936, "cash_payment": 17468, "monthly_payment": 1456, "capital_addition": 17468,"capital_growth": 146861,"value": 484641, "paid_date": None,      "note": None},
+    {"nro": 19, "year": 2043, "start_capital": 146861,"annual_return": 39652, "cash_payment": 19826, "monthly_payment": 1652, "capital_addition": 19826,"capital_growth": 166687,"value": 550068, "paid_date": None,      "note": None},
+    {"nro": 20, "year": 2044, "start_capital": 166687,"annual_return": 45005, "cash_payment": 22503, "monthly_payment": 1875, "capital_addition": 22503,"capital_growth": 189190,"value": 624326, "paid_date": None,      "note": None},
+]
+
+def get_hormuud_year(year):
+    for row in HORMUUD_PROJECTION:
+        if row["year"] == year:
+            return row
+    return None
+
 CURRENT_QTY_BY_ISIN = {h["isin"]: h["quantity"] for h in ETF_HOLDINGS}
 CURRENT_QTY_BY_ISIN.update({h["isin"]: h["quantity"] for h in STOCK_HOLDINGS})
 
@@ -758,6 +792,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/goal - Tavoitteet (Trading212, krypto ja perhe)\n"
             "/dividends - Osingot: viikko, kuukausi ja kaikki perheenjäsenet\n"
             "/growth - Salkun kasvu (tuotto & pääoma)\n"
+            "/hormuud - Hormuud-osakkeet ($, erillään Trading212:sta)\n"
             "/recommend - Sijoitusanalyysi & suositukset\n"
             "/testreport - Testaa aamuraportti (manuaalinen)\n\n"
             "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin — "
@@ -794,6 +829,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/goal - Tavoitteet (Trading212, krypto ja perhe)\n"
             "/dividends - Osingot: viikko, kuukausi ja kaikki perheenjäsenet\n"
             "/growth - Salkun kasvu (tuotto & pääoma)\n"
+            "/hormuud - Hormuud-osakkeet ($, erillään Trading212:sta)\n"
             "/recommend - Sijoitusanalyysi & suositukset\n"
             "/testreport - Testaa aamuraportti (manuaalinen)\n\n"
             "💰 *DCA:* €100/kk (crypto) + €200/kk (Aydaruus) + 5×50€/kk (perhe) = 550€/kk\n"
@@ -962,6 +998,90 @@ async def growth(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logging.error(f"Virhe /growth: {e}")
         await update.message.reply_text(f"⚠️ Virhe /growth: {str(e)[:200]}")
+
+# =============================================
+# 17B. HORMUUD — OMA, ERILLINEN SIJOITUS (DOLLAREISSA)
+# =============================================
+# HUOM: Hormuud EI sisälly TOTAL_INVESTMENTS-summaan eikä /goal-komentoon.
+# Se on tarkoituksella täysin oma kokonaisuutensa, ei sekoitu Trading212:een.
+def get_hormuud_active_row(today=None):
+    """Etsii viimeisimmän Hormuud-rivin, jonka pääoma on VAHVISTETTU (paid_date
+    on jo mennyt). Tämä on 'nyt kasvamassa oleva' pääoma. Kun uusi maksu
+    kirjataan tulevaisuudessa (paid_date täytetään), aktiivinen rivi siirtyy
+    automaattisesti eteenpäin - ei tarvitse käsin päivittää."""
+    today = today or datetime.now()
+    confirmed = []
+    for r in HORMUUD_PROJECTION:
+        if r["paid_date"]:
+            try:
+                d = datetime.strptime(r["paid_date"], "%d.%m.%Y")
+            except Exception:
+                continue
+            if d <= today:
+                confirmed.append((d, r))
+    if not confirmed:
+        return HORMUUD_PROJECTION[0]
+    confirmed.sort(key=lambda x: x[0])
+    return confirmed[-1][1]
+
+def build_hormuud_report_text(today=None):
+    today = today or datetime.now()
+    row = get_hormuud_active_row(today)
+
+    # Maksut tulevat historiallisesti n. vuoden välein (esim. 25.3.2025 -> 9.3.2026).
+    # Lasketaan seuraava odotettu maksupäivä samasta kuusta/päivästä, aina eteenpäin
+    # kunnes se on tulevaisuudessa - täysin automaattinen, ei koskaan vanhene.
+    expected_next = None
+    if row["paid_date"]:
+        last_paid = datetime.strptime(row["paid_date"], "%d.%m.%Y")
+        expected_next = last_paid.replace(year=last_paid.year + 1)
+        while expected_next < today:
+            expected_next = expected_next.replace(year=expected_next.year + 1)
+
+    rate_pct = None
+    if row["annual_return"] and row["start_capital"]:
+        rate_pct = row["annual_return"] / row["start_capital"] * 100
+
+    msg = "🏢 *Hormuud Shares* ($) — erillinen Trading212:sta\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+    msg += f"📌 *Nykyinen pääoma:* ${row['start_capital']:,.0f}"
+    if row["paid_date"]:
+        msg += f" (vahvistettu {row['paid_date']})"
+    msg += "\n"
+    if rate_pct:
+        msg += f"📈 Tuottoprosentti: ~{rate_pct:.1f} %/vuosi\n"
+    if row["annual_return"]:
+        msg += f"💰 Vuoden aikana kertyvä tuotto: ~${row['annual_return']:,.0f}\n"
+
+    if expected_next:
+        month_name = FI_MONTHS.get(expected_next.strftime('%m'), expected_next.strftime('%m'))
+        msg += f"📅 *Odotettu maksupäivä:* n. {month_name} {expected_next.year}\n"
+        msg += "   (pääoma kasvaa vuoden, maksu tapahtuu tyypillisesti n. vuotta myöhemmin)\n\n"
+    else:
+        msg += "\n"
+
+    if row["cash_payment"] is not None and row["capital_addition"] is not None:
+        msg += "💸 *Jako maksuhetkellä:*\n"
+        msg += f"   • 50 % maksetaan käteisenä: ~${row['cash_payment']:,.0f}\n"
+        msg += f"   • 50 % lisätään pääomaan: ~${row['capital_addition']:,.0f}\n"
+
+    if row["capital_growth"] is not None:
+        msg += f"\n🥅 *Uusi pääoma maksun jälkeen:* ~${row['capital_growth']:,.0f}\n"
+
+    if row["note"]:
+        msg += f"\n📝 {row['note']}\n"
+
+    msg += "\n⚠️ Nämä ovat projektioarvioita, ei taattuja tuottoja."
+    return msg
+
+async def hormuud(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        msg = build_hormuud_report_text()
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Virhe /hormuud: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /hormuud: {str(e)[:200]}")
 
 # =============================================
 # 18. GOAL — AYDARUUS + PERHE
@@ -1234,6 +1354,7 @@ def run_bot():
     app.add_handler(CommandHandler("goal", goal))
     app.add_handler(CommandHandler("dividends", dividends))
     app.add_handler(CommandHandler("growth", growth))
+    app.add_handler(CommandHandler("hormuud", hormuud))
     app.add_handler(CommandHandler("recommend", recommend))
     app.add_handler(CommandHandler("testreport", testreport))
     app.add_error_handler(error_handler)
