@@ -134,8 +134,11 @@ DCA_PLAN = {
     "next_trade": "2026-08-10"
 }
 
+# =============================================
+# Trading 212 – isän portfolio
+# =============================================
 TRADING212_PLAN = {
-    "name": "Dream",
+    "name": "Aydaruus Ahmed Wehliye",
     "amount_eur": 450,
     "day": 10,
     "holdings": 39,
@@ -146,10 +149,10 @@ TRADING212_PLAN = {
 }
 
 # =============================================
-# PERHEEN HOLDINGS – Nyt isä mukana!
+# Perheen holdings – isä mukana listassa
 # =============================================
 FAMILY_HOLDINGS = [
-    {"name": "👨 Aydaruus Ahmed Wehliye (Isä)", "holdings": 18, "value": 1180.00, "profit": 180.00, "profit_percent": 18.0},
+    {"name": "👨 Aydaruus Ahmed Wehliye (Isä)", "holdings": 39, "value": 27562.45, "profit": 2946.77, "profit_percent": 11.97},
     {"name": "Ismahaan Aydaurus", "holdings": 20, "value": 1184.98, "profit": 178.95, "profit_percent": 17.79},
     {"name": "Ilyaas Aydaurus", "holdings": 26, "value": 1181.39, "profit": 182.23, "profit_percent": 18.25},
     {"name": "Farhia Aydaurus", "holdings": 18, "value": 1180.87, "profit": 179.94, "profit_percent": 17.98},
@@ -273,7 +276,7 @@ def get_recommendation(current_price, old_price, name):
         return "🟡 HOLD", f"{change:+.1f}% (neutraali)"
 
 # =============================================
-# 7. OSINGOT – OSAKKEET JA ETF:T
+# 7. OSINGOT – OSAKKEET JA ETF:T (TODELLINEN HISTORIA)
 # =============================================
 
 def get_dividend_details():
@@ -402,6 +405,7 @@ def get_dividend_details():
         else:
             logging.info(f"ETF {etf['name']} on kasvava (Acc) – ei osinkoa.")
 
+    # Järjestetään ex-daten mukaan
     dividend_list.sort(key=lambda x: x.get("ex_date", "99.99.9999"))
     return dividend_list, round(total_yearly, 2)
 
@@ -647,6 +651,9 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+# =============================================
+# PORTFOLIO – KORJATTU (isä molemmissa)
+# =============================================
 async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📊 *Portfolio-gaaga*\n━━━━━━━━━━━━━━━━━\n\n"
     msg += f"💰 *Wadarta guud:* €{TOTAL_INVESTMENTS:,.2f}\n"
@@ -655,12 +662,15 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg += f"📈 *Stock holdings:* {len(STOCK_HOLDINGS)} holdings\n"
     msg += f"🪙 *Crypto holdings:* {len(CRYPTO_HOLDINGS)} holdings\n\n"
 
+    # Trading 212 – isän portfolio
     msg += f"📊 *Trading 212 -kuukausisijoitus*\n"
+    msg += f"👤 *{TRADING212_PLAN['name']}*\n"
     msg += f"💰 €{TRADING212_PLAN['amount_eur']}/kk (10. päivä)\n"
     msg += f"📈 Dream: {TRADING212_PLAN['holdings']} holdingia\n"
     msg += f"💵 Arvo: €{TRADING212_PLAN['total_value']:,.2f}\n"
     msg += f"📈 Voitto: +{TRADING212_PLAN['profit_percent']:.2f}%\n\n"
 
+    # Perheen holdings – isä mukana
     msg += "👨‍👩‍👧‍👦 *Perheen holdings*\n"
     for member in FAMILY_HOLDINGS:
         msg += f"• {member['name']}: {member['holdings']} hold. = €{member['value']:,.2f} (+{member['profit_percent']:.2f}%)\n"
@@ -755,7 +765,7 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
-# 13. OSINGOT – KORJATTU (ei "Message too long")
+# 13. OSINGOT – KORJATTU (kvartaali + vuosi, tarkka summa, maksupäivä)
 # =============================================
 async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -768,7 +778,6 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Näytetään max 15 osinkoa per viesti
         max_per_msg = 15
         total_items = len(dividend_list)
         sent_count = 0
@@ -781,19 +790,20 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
             for div in chunk:
-                div_per_share = div['dividend_per_share']
-                yearly_total = div['yearly_total']
+                div_q = div['dividend_per_share']          # kvartaaliosinko
+                div_y = div_q * 4                          # vuosiosinko per osake
+                yearly_total = div['yearly_total']         # quantity × div_y
                 quantity = div['quantity']
                 
                 msg += f"🔹 *{div['name']}* ({div['symbol']})\n"
                 msg += f"   📊 Tyyppi: {div['type']}\n"
-                msg += f"   💰 Osinko/osake: €{div_per_share:.4f}\n"
-                msg += f"   📦 Sinä saat: {quantity:.2f} × €{div_per_share:.4f} = *€{yearly_total:,.2f}*\n"
+                msg += f"   💰 Osinko/osake (kvartaali): €{div_q:.4f}\n"
+                msg += f"   💰 Vuosiosinko/osake: €{div_y:.4f}\n"
+                msg += f"   📦 Sinä saat vuodessa: {quantity:.2f} × €{div_y:.4f} = *€{yearly_total:,.2f}*\n"
                 msg += f"   📅 Ex-date: {div['ex_date']}\n"
                 msg += f"   💳 Maksupäivä: {div['payout_date']}\n"
                 msg += "\n"
 
-            # Lisätään yhteenveto vain viimeiseen viestiin
             if sent_count >= total_items:
                 msg += f"📊 *Osinkoja yhteensä vuodessa:* €{total_yearly:,.2f}\n"
                 msg += "ℹ️ *Huom:* Kasvavat ETF:t (Acc) eivät maksa osinkoa."
