@@ -9,6 +9,10 @@ import threading
 import feedparser
 import re
 import pandas as pd
+import json
+import base64
+import hmac
+import hashlib
 from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -18,6 +22,10 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # =============================================
 TOKEN = os.environ["BOT_TOKEN"]
 PORT = int(os.environ.get("PORT", 10000))
+
+# Trading 212 API -avaimet (pakolliset)
+T212_API_KEY = os.environ.get("T212_API_KEY")
+T212_API_SECRET = os.environ.get("T212_API_SECRET")
 
 # =============================================
 # 2. LOGGING
@@ -160,7 +168,107 @@ TOTAL_INVESTMENTS = 33253.64
 TOTAL_CRYPTO = sum(c["value_eur"] for c in CRYPTO_HOLDINGS)
 
 # =============================================
-# 5. API-FUNKTIOIT (EUR)
+# 5. TRADING 212 API -TOIMINNOT
+# =============================================
+
+def t212_api_request(endpoint, method="GET", data=None):
+    """Tee Trading 212 API -pyyntö"""
+    if not T212_API_KEY or not T212_API_SECRET:
+        logging.error("Trading 212 API -avaimet puuttuvat")
+        return None
+    
+    base_url = "https://api.trading212.com/v1"
+    url = f"{base_url}/{endpoint.lstrip('/')}"
+    
+    headers = {
+        "Authorization": f"Bearer {T212_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        if method == "GET":
+            response = requests.get(url, headers=headers, timeout=15)
+        elif method == "POST":
+            response = requests.post(url, headers=headers, json=data, timeout=15)
+        else:
+            return None
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logging.error(f"T212 API error: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        logging.error(f"T212 API request failed: {e}")
+        return None
+
+def get_upcoming_dividends_t212():
+    """
+    Hakee tulevat osingot Trading 212 API:sta.
+    """
+    if not T212_API_KEY or not T212_API_SECRET:
+        logging.warning("Trading 212 API -avaimia ei ole asetettu")
+        return [], 0
+    
+    try:
+        # Yritetään hakea tulevat osingot
+        data = t212_api_request("dividends/upcoming")
+        if data is None:
+            logging.warning("API ei palauttanut tulevia osinkoja")
+            return [], 0
+        
+        upcoming = []
+        total = 0.0
+        for item in data:
+            # Oletetaan, että API palauttaa listan, jossa on ainakin:
+            # ticker, name, amount, exDate, payDate
+            symbol = item.get("ticker") or item.get("symbol")
+            name = item.get("name") or item.get("instrumentName")
+            amount = item.get("amount") or item.get("dividendAmount") or 0
+            ex_date = item.get("exDate") or item.get("exDividendDate")
+            pay_date = item.get("payDate") or item.get("paymentDate")
+            
+            if not symbol or not name or not amount:
+                continue
+            
+            total += amount
+            
+            # Muunna päivämäärät
+            if ex_date:
+                try:
+                    ex_date = datetime.fromisoformat(ex_date.replace('Z', '+00:00')).strftime('%d.%m.%Y')
+                except:
+                    ex_date = "Tuntematon"
+            else:
+                ex_date = "Tuntematon"
+            
+            if pay_date:
+                try:
+                    pay_date = datetime.fromisoformat(pay_date.replace('Z', '+00:00')).strftime('%d.%m.%Y')
+                except:
+                    pay_date = "Tuntematon"
+            else:
+                pay_date = "Tuntematon"
+            
+            upcoming.append({
+                "symbol": symbol,
+                "name": name,
+                "amount": round(amount, 2),
+                "ex_date": ex_date,
+                "payout_date": pay_date,
+                "dividend_per_share": round(amount / (item.get("quantity") or 1), 4)
+            })
+        
+        # Järjestä maksupäivän mukaan
+        upcoming.sort(key=lambda x: x['payout_date'])
+        return upcoming, round(total, 2)
+        
+    except Exception as e:
+        logging.error(f"Virhe haettaessa tulevia osinkoja API:sta: {e}")
+        return [], 0
+
+# =============================================
+# 6. API-FUNKTIOIT (EUR)
 # =============================================
 
 def get_crypto_price(symbol):
@@ -234,7 +342,7 @@ def get_etf_price(symbol):
     return get_stock_price(symbol)
 
 # =============================================
-# 6. HISTORIALLISET HINNAT (30 päivää)
+# 7. HISTORIALLISET HINNAT (30 päivää)
 # =============================================
 
 def get_stock_historical(symbol, days=30):
@@ -272,7 +380,7 @@ def get_recommendation(current_price, old_price, name):
         return "🟡 HOLD", f"{change:+.1f}% (neutraali)"
 
 # =============================================
-# 7. OSINGOT – LUE CSV:STÄ (TODELLISET MENNEET)
+# 8. OSINGOT – LUE CSV:STÄ (TODELLISET MENNEET)
 # =============================================
 
 def get_dividend_details():
@@ -311,111 +419,6 @@ def get_dividend_details():
         return [], 0
     
     return dividend_list, round(total_yearly, 2)
-
-# =============================================
-# 8. TULEVAT OSINGOT
-# =============================================
-
-def get_upcoming_dividends():
-    """Hakee tulevat osingot yfinance:stä"""
-    upcoming = []
-    total_upcoming = 0.0
-    today = datetime.now().date()
-
-    for stock in STOCK_HOLDINGS:
-        try:
-            ticker = yf.Ticker(stock["symbol"])
-            info = ticker.info
-
-            div_rate = info.get("dividendRate")
-            ex_date_ts = info.get("exDividendDate")
-            payout_ts = info.get("dividendDate")
-
-            if ex_date_ts:
-                ex_date = datetime.fromtimestamp(ex_date_ts).date()
-                if ex_date >= today:
-                    quarterly_div = (div_rate / 4) if div_rate else 0
-                    if quarterly_div > 0:
-                        amount = quarterly_div * stock["quantity"]
-                    else:
-                        div_hist = ticker.dividends
-                        if not div_hist.empty:
-                            last_div = div_hist.iloc[-1]
-                            amount = last_div * stock["quantity"]
-                            quarterly_div = last_div
-                        else:
-                            continue
-                    
-                    total_upcoming += amount
-                    
-                    if payout_ts:
-                        payout_date = datetime.fromtimestamp(payout_ts).strftime('%d.%m.%Y')
-                    else:
-                        payout_est = ex_date + timedelta(days=30)
-                        payout_date = payout_est.strftime('%d.%m.%Y') + " (arvio)"
-
-                    upcoming.append({
-                        "symbol": stock["symbol"],
-                        "name": stock["name"],
-                        "type": "Osake",
-                        "amount": round(amount, 2),
-                        "dividend_per_share": round(quarterly_div, 4),
-                        "ex_date": ex_date.strftime('%d.%m.%Y'),
-                        "payout_date": payout_date,
-                        "quantity": stock["quantity"]
-                    })
-        except Exception as e:
-            logging.error(f"Virhe {stock['symbol']}: {e}")
-
-    # ETF:t (arvio)
-    ETF_TICKER_MAP = {
-        "iShares Core S&P 500": "SPY",
-        "Vanguard S&P 500": "VOO",
-        "iShares Core MSCI World": "URTH",
-        "Vanguard FTSE All-World": "VWRA",
-        "iShares NASDAQ 100": "QQQ",
-        "SPDR S&P 500": "SPY5",
-        "Vanguard S&P 500": "VUSA",
-        "iShares Core S&P 500 Dist": "IUSA",
-        "iShares NASDAQ 100": "EQQQ",
-        "SPDR S&P 400 Mid Cap": "SPY4",
-        "iShares Core MSCI Europe": "MEUD",
-        "JPMorgan Nasdaq Premium": "JNQ",
-        "JPMorgan US Equity Premium": "JUEQ",
-        "JPMorgan Global Equity Premium": "JGEP",
-        "Vanguard FTSE All-World High Div": "VHYL",
-        "Global X Nasdaq 100 Covered Call": "QYLD",
-        "VanEck Semiconductor": "SMH",
-        "SPDR S&P US Dividend Aristocrats": "UDVD"
-    }
-
-    for etf in ETF_HOLDINGS:
-        ticker = ETF_TICKER_MAP.get(etf["name"])
-        if ticker:
-            try:
-                etf_ticker = yf.Ticker(ticker)
-                div_hist = etf_ticker.dividends
-                if not div_hist.empty:
-                    last_div = div_hist.iloc[-1]
-                    ex_date = div_hist.index[-1] + timedelta(days=30)
-                    if ex_date.date() >= datetime.now().date():
-                        amount = last_div * etf["quantity"]
-                        total_upcoming += amount
-                        upcoming.append({
-                            "symbol": ticker,
-                            "name": etf["name"],
-                            "type": "ETF (arvio)",
-                            "amount": round(amount, 2),
-                            "dividend_per_share": round(last_div, 4),
-                            "ex_date": ex_date.strftime('%d.%m.%Y') + " (arvio)",
-                            "payout_date": (ex_date + timedelta(days=30)).strftime('%d.%m.%Y') + " (arvio)",
-                            "quantity": etf["quantity"]
-                        })
-            except Exception as e:
-                logging.error(f"Virhe ETF-osinkoa {etf['name']}: {e}")
-
-    upcoming.sort(key=lambda x: x['payout_date'])
-    return upcoming, round(total_upcoming, 2)
 
 # =============================================
 # 9. TAVOITE (100k)
@@ -578,7 +581,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
         "/dividends - Menneet osingot (TODELLISET)\n"
-        "/upcoming - Tulevat osingot\n"
+        "/upcoming - Tulevat osingot (Trading 212 API)\n"
         "/recommend - Sijoitusanalyysi & suositukset\n\n"
         "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin!",
         parse_mode="Markdown"
@@ -603,7 +606,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
         "/dividends - Menneet osingot (TODELLISET)\n"
-        "/upcoming - Tulevat osingot\n"
+        "/upcoming - Tulevat osingot (Trading 212 API)\n"
         "/recommend - Sijoitusanalyysi & suositukset\n\n"
         "💰 *DCA:* €100/bil (crypto) + €450/kk (Trading 212)\n"
         "📊 *Warbixin maalinle:* 9:00 subax",
@@ -810,31 +813,38 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe haettaessa osinkoja: {str(e)[:100]}")
 
 # =============================================
-# 15. TULEVAT OSINGOT
+# 15. TULEVAT OSINGOT (TRADING 212 API)
 # =============================================
 async def upcoming(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        upcoming_list, total_upcoming = get_upcoming_dividends()
-
-        if not upcoming_list:
-            await update.message.reply_text("⚠️ Tulevia osinkoja ei löytynyt tällä hetkellä.")
+        # Jos API-avaimia ei ole, näytä viesti
+        if not T212_API_KEY or not T212_API_SECRET:
+            await update.message.reply_text(
+                "⚠️ Trading 212 API -avaimia ei ole asetettu.\n\n"
+                "Aseta `T212_API_KEY` ja `T212_API_SECRET` Renderin ympäristömuuttujiin."
+            )
             return
 
-        # Järjestä maksupäivän mukaan (aikaisin ensin)
-        upcoming_list.sort(key=lambda x: datetime.strptime(x['payout_date'].split(' ')[0], '%d.%m.%Y'))
+        upcoming_list, total_upcoming = get_upcoming_dividends_t212()
+
+        if not upcoming_list:
+            await update.message.reply_text("⚠️ Tulevia osinkoja ei löytynyt Trading 212:sta. API ei palauttanut dataa.")
+            return
+
+        # Järjestä maksupäivän mukaan
+        upcoming_list.sort(key=lambda x: x['payout_date'])
 
         # Ryhmittele kuukausittain
         monthly = {}
         yearly_total = 0
         for div in upcoming_list:
-            payout_clean = div['payout_date'].split(' ')[0]
-            month_key = payout_clean[3:5] + "/" + payout_clean[6:10]
+            month_key = div['payout_date'][3:5] + "/" + div['payout_date'][6:10]
             if month_key not in monthly:
                 monthly[month_key] = 0
             monthly[month_key] += div['amount']
             yearly_total += div['amount']
 
-        msg = "📅 *TULEVAT OSINGOT*\n"
+        msg = "📅 *TULEVAT OSINGOT (Trading 212)*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
         for div in upcoming_list:
@@ -849,7 +859,7 @@ async def upcoming(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"   📅 {month}: €{total:,.2f}\n"
 
         msg += f"\n💰 *Tulevia osinkoja yhteensä:* €{yearly_total:,.2f}"
-        msg += "\n📅 *Ajanjakso:* lähimmät 6 kuukautta"
+        msg += "\n📅 *Lähde:* Trading 212 API"
 
         await update.message.reply_text(msg, parse_mode="Markdown")
 
