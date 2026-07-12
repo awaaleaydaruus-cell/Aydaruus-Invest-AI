@@ -150,12 +150,12 @@ TRADING212_PLAN = {
 }
 
 FAMILY_HOLDINGS = [
-    {"name": "👨 Aydaruus Ahmed Wehliye (Dream)", "holdings": TRADING212_PLAN["holdings"], "value": TRADING212_PLAN["total_value"], "profit": TRADING212_PLAN["profit"], "profit_percent": TRADING212_PLAN["profit_percent"]},
-    {"name": "Ismahaan Aydaurus", "holdings": 20, "value": 1184.98, "profit": 178.95, "profit_percent": 17.79},
-    {"name": "Ilyaas Aydaurus", "holdings": 26, "value": 1181.39, "profit": 182.23, "profit_percent": 18.25},
-    {"name": "Farhia Aydaurus", "holdings": 18, "value": 1180.87, "profit": 179.94, "profit_percent": 17.98},
-    {"name": "Mahamed Aydaurus", "holdings": 19, "value": 1177.03, "profit": 156.81, "profit_percent": 15.38},
-    {"name": "Yahye Aydaurus", "holdings": 25, "value": 966.85, "profit": 128.01, "profit_percent": 15.27},
+    {"name": "Aydaruus", "holdings": TRADING212_PLAN["holdings"], "value": TRADING212_PLAN["total_value"], "profit": TRADING212_PLAN["profit"], "profit_percent": TRADING212_PLAN["profit_percent"]},
+    {"name": "Ismahaan", "holdings": 20, "value": 1184.98, "profit": 178.95, "profit_percent": 17.79},
+    {"name": "Ilyaas", "holdings": 26, "value": 1181.39, "profit": 182.23, "profit_percent": 18.25},
+    {"name": "Farhia", "holdings": 18, "value": 1180.87, "profit": 179.94, "profit_percent": 17.98},
+    {"name": "Mahamed", "holdings": 19, "value": 1177.03, "profit": 156.81, "profit_percent": 15.38},
+    {"name": "Yahye", "holdings": 25, "value": 966.85, "profit": 128.01, "profit_percent": 15.27},
 ]
 
 TOTAL_INVESTMENTS = 33253.64
@@ -165,7 +165,36 @@ CURRENT_QTY_BY_ISIN = {h["isin"]: h["quantity"] for h in ETF_HOLDINGS}
 CURRENT_QTY_BY_ISIN.update({h["isin"]: h["quantity"] for h in STOCK_HOLDINGS})
 
 # =============================================
-# 5. HINTA-APIT (EUR)
+# 5. PERHEENJÄSENTEN OMISTUKSET (AUTOMAATTINEN SKALAUS)
+# =============================================
+
+def generate_family_ownerships():
+    """Luo jokaiselle perheenjäsenelle arvioidut omistukset skaalaamalla Aydaruusin omistuksia.
+    Palauttaa sanakirjan {nimi: {isin: määrä}}.
+    """
+    aydaruus_value = TRADING212_PLAN["total_value"]  # 27562.45
+    family_ownerships = {}
+
+    for member in FAMILY_HOLDINGS:
+        name = member["name"].lower()
+        value = member["value"]
+        if name == "aydaruus":
+            # Aydaruus itse käyttää tarkkoja omistuksia
+            family_ownerships["aydaruus"] = CURRENT_QTY_BY_ISIN.copy()
+        else:
+            scale = value / aydaruus_value if aydaruus_value > 0 else 0
+            scaled = {}
+            for isin, qty in CURRENT_QTY_BY_ISIN.items():
+                scaled[isin] = qty * scale
+            family_ownerships[name] = scaled
+
+    return family_ownerships
+
+# Generoidaan sanakirja
+FAMILY_OWNERSHIPS = generate_family_ownerships()
+
+# =============================================
+# 6. HINTA-APIT (EUR)
 # =============================================
 
 def get_crypto_price(symbol):
@@ -234,7 +263,7 @@ def get_etf_price(symbol):
     return get_stock_price(symbol)
 
 # =============================================
-# 6. HISTORIALLISET HINNAT (30 päivää) — /recommend -komentoa varten
+# 7. HISTORIALLISET HINNAT (30 päivää) — /recommend -komentoa varten
 # =============================================
 
 def get_crypto_historical(symbol, days=30):
@@ -262,7 +291,7 @@ def get_recommendation(current_price, old_price, name):
         return "🟡 HOLD", f"{change:+.1f}% (neutraali)"
 
 # =============================================
-# 7. OSINGOT — LUE CSV:STÄ
+# 8. OSINGOT — LUE CSV:STÄ
 # =============================================
 DIVIDENDS_CSV_PATH = "dividends.csv"
 
@@ -311,13 +340,24 @@ def get_dividends_by_month(dividend_list):
     return monthly, yearly_total
 
 # =============================================
-# 8. TULEVAT OSINGOT — ARVIO CSV-HISTORIAN PERUSTEELLA
+# 9. TULEVAT OSINGOT — ARVIO CSV-HISTORIAN PERUSTEELLA (perheenjäsenille)
 # =============================================
-def get_upcoming_dividends_estimated(until_date=None):
+
+def get_upcoming_dividends_estimated(until_date=None, owner="aydaruus"):
+    """
+    Arvioi tulevat osingot annetulle omistajalle (owner).
+    owner: "aydaruus", "ismahaan", "ilyaas", "farhia", "mahamed", "yahye"
+    """
     try:
         df = _load_dividends_dataframe()
     except Exception as e:
         logging.error(f"Virhe CSV:n luvussa (upcoming-arvio): {e}")
+        return [], {}, 0.0
+
+    owner_lower = owner.lower()
+    qty_by_isin = FAMILY_OWNERSHIPS.get(owner_lower)
+    if qty_by_isin is None:
+        # Omistajaa ei löydy
         return [], {}, 0.0
 
     projected = []
@@ -328,8 +368,8 @@ def get_upcoming_dividends_estimated(until_date=None):
         group = group.sort_values('Date')
         if len(group) < 2:
             continue
-        qty = CURRENT_QTY_BY_ISIN.get(isin)
-        if not qty:
+        qty = qty_by_isin.get(isin)
+        if not qty or qty == 0:
             continue
         name = group.iloc[-1]['Name']
         ticker = group.iloc[-1]['Ticker']
@@ -365,7 +405,7 @@ def get_upcoming_dividends_estimated(until_date=None):
     return projected, monthly, round(yearly_total, 2)
 
 # =============================================
-# 9. TAVOITELASKENTA (Yleiset apufunktiot)
+# 10. TAVOITELASKENTA (Yleiset apufunktiot)
 # =============================================
 
 def calculate_goal(current_value, monthly_savings, target=100000, yearly_return_pct=0.07):
@@ -393,7 +433,7 @@ def calculate_compounding_crossover(current_value, monthly_savings, yearly_retur
     return None, None, None
 
 # =============================================
-# 10. UUTISET
+# 11. UUTISET
 # =============================================
 
 def get_news(query, limit=3):
@@ -438,7 +478,7 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /news: {str(e)[:200]}")
 
 # =============================================
-# 11. AAMURAPORTTI (lähetetään kaikille käyttäjille)
+# 12. AAMURAPORTTI (lähetetään kaikille käyttäjille)
 # =============================================
 
 async def send_daily_report():
@@ -497,7 +537,7 @@ async def send_daily_report():
         logging.error(f"Virhe send_daily_report: {e}")
 
 # =============================================
-# 12. AJOITUS (BackgroundScheduler + synkroninen wrapper)
+# 13. AJOITUS (BackgroundScheduler + synkroninen wrapper)
 # =============================================
 
 def send_daily_report_sync():
@@ -510,7 +550,7 @@ scheduler.add_job(send_daily_report_sync, 'cron', hour=9, minute=0, id="daily_re
 scheduler.start()
 
 # =============================================
-# 13. TELEGRAM KOMENNOT
+# 14. TELEGRAM KOMENNOT
 # =============================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -538,7 +578,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/testapi - Tijaabi API-yada\n"
             "/news - Uutiset omistuksista\n"
             "/goal - Tavoitteet (Trading212, krypto ja yhteensä)\n"
-            "/dividends - Tulevat osingot, kk-ryhmiteltynä\n"
+            "/dividends [nimi] - Tulevat osingot (oletus Aydaruus, esim. /dividends ismahaan)\n"
             "/recommend - Sijoitusanalyysi & suositukset\n\n"
             "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin!",
             parse_mode="Markdown"
@@ -570,7 +610,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/testapi - Tijaabi API-yada\n"
             "/news - Uutiset omistuksista\n"
             "/goal - Tavoitteet (Trading212, krypto ja yhteensä)\n"
-            "/dividends - Tulevat osingot, kk-ryhmiteltynä\n"
+            "/dividends [nimi] - Tulevat osingot (oletus Aydaruus, esim. /dividends ismahaan)\n"
             "/recommend - Sijoitusanalyysi & suositukset\n\n"
             "💰 *DCA:* €100/bil (crypto) + €450/kk (Trading 212)\n"
             "📊 *Warbixin maalinle:* 9:00 subax",
@@ -724,7 +764,7 @@ async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /testapi: {str(e)[:200]}")
 
 # =============================================
-# 14. UUSI /goal — kolme erillistä osiota
+# 15. UUSI /goal — kolme erillistä osiota
 # =============================================
 
 async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -794,7 +834,7 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /goal: {str(e)[:200]}")
 
 # =============================================
-# 15. MENNEET OSINGOT
+# 16. OSINGOT — PERHEENJÄSENILLE
 # =============================================
 FI_MONTHS = {
     "01": "Tammikuu", "02": "Helmikuu", "03": "Maaliskuu", "04": "Huhtikuu",
@@ -804,12 +844,25 @@ FI_MONTHS = {
 
 async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        # Tarkista, onko argumentti annettu
+        owner = "aydaruus"
+        if context.args:
+            owner = context.args[0].lower()
+
+        # Tarkista, onko omistaja FAMILY_OWNERSHIPS-sanakirjassa
+        if owner not in FAMILY_OWNERSHIPS:
+            await update.message.reply_text(
+                f"⚠️ Omistajaa '{owner}' ei löydy. Käytettävissä: {', '.join(FAMILY_OWNERSHIPS.keys())}\n"
+                "Esimerkki: /dividends ismahaan"
+            )
+            return
+
         current_year = datetime.now().year
-        projected, monthly, yearly_total = get_upcoming_dividends_estimated()
+        projected, monthly, yearly_total = get_upcoming_dividends_estimated(owner=owner)
 
         if not projected:
             await update.message.reply_text(
-                "⚠️ Osinkoja ei voitu arvioida.\n"
+                f"⚠️ Osinkoja ei voitu arvioida henkilölle {owner}.\n"
                 "Varmista, että dividends.csv sisältää vähintään 2 maksua per osake/ETF."
             )
             return
@@ -821,12 +874,12 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         months_sorted = sorted(by_month.keys(), key=lambda m: datetime.strptime(m, '%m/%Y'))
 
-        header = "💰 *Dividends*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        header = f"💰 *Dividends – {owner.capitalize()}*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
         blocks = []
         for key in months_sorted:
             month_num, year = key.split('/')
             month_name = FI_MONTHS.get(month_num, month_num)
-            month_total = monthly[key]
+            month_total = monthly.get(key, 0.0)
             block = f"📅 *{month_name} {year}* — €{month_total:,.2f}\n"
             for div in by_month[key]:
                 block += f"   {div['date']}  •  {div['name']} ({div['symbol']})  →  €{div['amount']:,.2f}\n"
@@ -854,7 +907,7 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /dividends: {str(e)[:200]}")
 
 # =============================================
-# 16. SUOSITUKSET (BUY/HOLD/SELL) — NOPEUTETTU
+# 17. SUOSITUKSET (BUY/HOLD/SELL) — NOPEUTETTU
 # =============================================
 
 async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -932,7 +985,7 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /recommend: {str(e)[:200]}")
 
 # =============================================
-# 17. VIRHEIDENKÄSITTELY
+# 18. VIRHEIDENKÄSITTELY
 # =============================================
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.error(f"Virhe: {context.error}")
@@ -945,7 +998,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # =============================================
-# 18. FLASK
+# 19. FLASK
 # =============================================
 flask_app = Flask(__name__)
 
@@ -957,7 +1010,7 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=PORT, debug=False)
 
 # =============================================
-# 19. PÄÄFUNKTIO
+# 20. PÄÄFUNKTIO
 # =============================================
 def run_bot():
     app = Application.builder().token(TOKEN).build()
