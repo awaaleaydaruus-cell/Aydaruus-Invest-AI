@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import threading
 import feedparser
 import re
+import pandas as pd
 from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -112,7 +113,7 @@ STOCK_HOLDINGS = [
     {"symbol": "QCOM", "name": "Qualcomm", "quantity": 60.8224, "price": 188.9}
 ]
 
-# Crypto holdings
+# Crypto holdings (9)
 CRYPTO_HOLDINGS = [
     {"symbol": "bitcoin", "name": "BTC", "quantity": 0.00674376, "value_eur": 379.43},
     {"symbol": "ethereum", "name": "ETH", "quantity": 0.36953452, "value_eur": 587.15},
@@ -134,9 +135,6 @@ DCA_PLAN = {
     "next_trade": "2026-08-10"
 }
 
-# =============================================
-# Trading 212 – isän portfolio
-# =============================================
 TRADING212_PLAN = {
     "name": "Aydaruus Ahmed Wehliye",
     "amount_eur": 450,
@@ -148,9 +146,7 @@ TRADING212_PLAN = {
     "profit_percent": 11.97
 }
 
-# =============================================
-# Perheen holdings – isä mukana listassa
-# =============================================
+# Perheen holdings – isä mukana
 FAMILY_HOLDINGS = [
     {"name": "👨 Aydaruus Ahmed Wehliye (Isä)", "holdings": 39, "value": 27562.45, "profit": 2946.77, "profit_percent": 11.97},
     {"name": "Ismahaan Aydaurus", "holdings": 20, "value": 1184.98, "profit": 178.95, "profit_percent": 17.79},
@@ -276,137 +272,44 @@ def get_recommendation(current_price, old_price, name):
         return "🟡 HOLD", f"{change:+.1f}% (neutraali)"
 
 # =============================================
-# 7. OSINGOT – OSAKKEET JA ETF:T (TODELLINEN HISTORIA)
+# 7. OSINGOT – LUE CSV:STÄ (TODELLISET)
 # =============================================
 
 def get_dividend_details():
-    """
-    Palauttaa osinkotiedot eriteltynä.
-    - Osakkeet: haetaan yfinance-dividendihistoriasta
-    - ETF:t: haetaan erikseen (vain jakavat ETF:t)
-    """
+    """Lukee todelliset osingot dividends.csv-tiedostosta"""
     dividend_list = []
     total_yearly = 0.0
-
-    # --- 1. OSAKKEET ---
-    for stock in STOCK_HOLDINGS:
-        try:
-            ticker = yf.Ticker(stock["symbol"])
-            div_hist = ticker.dividends
-            if div_hist.empty:
-                continue
-
-            last_div_amount = div_hist.iloc[-1]
-            last_div_date = div_hist.index[-1]
-            yearly_divs = div_hist.tail(4)
-            yearly_total_per_share = yearly_divs.sum()
-            yearly_total = yearly_total_per_share * stock["quantity"]
-            total_yearly += yearly_total
-
-            ex_date = last_div_date.strftime('%d.%m.%Y')
+    
+    try:
+        df = pd.read_csv('dividends.csv')
+        df = df[df['Action'] == 'Dividend (Dividend)']
+        
+        for _, row in df.iterrows():
+            total = float(str(row['Total']).replace(',', '.'))
+            total_yearly += total
             
-            info = ticker.info
-            payout_ts = info.get("dividendDate")
-            if payout_ts:
-                payout_date = datetime.fromtimestamp(payout_ts).strftime('%d.%m.%Y')
-            else:
-                payout_est = last_div_date + timedelta(days=30)
-                payout_date = payout_est.strftime('%d.%m.%Y') + " (arvio)"
-
+            date_str = row['Time'].split(' ')[0]
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            date_formatted = date_obj.strftime('%d.%m.%Y')
+            
+            tax = float(str(row['Withholding tax']).replace(',', '.')) if row['Withholding tax'] else 0
+            
             dividend_list.append({
-                "symbol": stock["symbol"],
-                "name": stock["name"],
-                "type": "Osake",
-                "dividend_per_share": round(last_div_amount, 4),
-                "yearly_total": round(yearly_total, 2),
-                "ex_date": ex_date,
-                "payout_date": payout_date,
-                "quantity": stock["quantity"]
+                "date": date_formatted,
+                "symbol": row['Ticker'],
+                "name": row['Name'],
+                "amount": total,
+                "quantity": float(row['No. of shares']),
+                "price": float(row['Price / share']),
+                "tax": tax
             })
-        except Exception as e:
-            logging.error(f"Virhe haettaessa osinkoa {stock['symbol']}: {e}")
-            continue
-
-    # --- 2. ETF:T (VAIN JAKAVAT) ---
-    DISTRIBUTING_ETFS = [
-        "iShares Core S&P 500 Dist",
-        "SPDR S&P US Dividend Aristocrats",
-        "Global X Nasdaq 100 Covered Call",
-        "JPMorgan Nasdaq Premium",
-        "JPMorgan US Equity Premium",
-        "JPMorgan Global Equity Premium",
-        "Vanguard FTSE All-World High Div",
-        "VanEck Semiconductor",
-        "iShares Core S&P 500",
-        "Vanguard S&P 500",
-        "iShares NASDAQ 100",
-        "SPDR S&P 500",
-        "SPDR S&P 400 Mid Cap",
-        "iShares Core MSCI Europe"
-    ]
-
-    ETF_TICKER_MAP = {
-        "iShares Core S&P 500 Dist": "IUSA",
-        "SPDR S&P US Dividend Aristocrats": "UDVD",
-        "Global X Nasdaq 100 Covered Call": "QYLD",
-        "JPMorgan Nasdaq Premium": "JNQ",
-        "JPMorgan US Equity Premium": "JUEQ",
-        "JPMorgan Global Equity Premium": "JGEP",
-        "Vanguard FTSE All-World High Div": "VHYL",
-        "VanEck Semiconductor": "SMH",
-        "iShares Core S&P 500": "SPY",
-        "Vanguard S&P 500": "VOO",
-        "iShares NASDAQ 100": "QQQ",
-        "SPDR S&P 500": "SPY5",
-        "SPDR S&P 400 Mid Cap": "SPY4",
-        "iShares Core MSCI Europe": "MEUD"
-    }
-
-    for etf in ETF_HOLDINGS:
-        if etf["name"] in DISTRIBUTING_ETFS:
-            ticker = ETF_TICKER_MAP.get(etf["name"])
-            if ticker:
-                try:
-                    etf_ticker = yf.Ticker(ticker)
-                    div_hist = etf_ticker.dividends
-                    if div_hist.empty:
-                        continue
-                    
-                    last_div_amount = div_hist.iloc[-1]
-                    last_div_date = div_hist.index[-1]
-                    yearly_divs = div_hist.tail(4)
-                    yearly_total_per_share = yearly_divs.sum()
-                    yearly_total = yearly_total_per_share * etf["quantity"]
-                    total_yearly += yearly_total
-
-                    ex_date = last_div_date.strftime('%d.%m.%Y')
-                    
-                    info = etf_ticker.info
-                    payout_ts = info.get("dividendDate")
-                    if payout_ts:
-                        payout_date = datetime.fromtimestamp(payout_ts).strftime('%d.%m.%Y')
-                    else:
-                        payout_est = last_div_date + timedelta(days=30)
-                        payout_date = payout_est.strftime('%d.%m.%Y') + " (arvio)"
-
-                    dividend_list.append({
-                        "symbol": ticker,
-                        "name": etf["name"],
-                        "type": "ETF",
-                        "dividend_per_share": round(last_div_amount, 4),
-                        "yearly_total": round(yearly_total, 2),
-                        "ex_date": ex_date,
-                        "payout_date": payout_date,
-                        "quantity": etf["quantity"]
-                    })
-                except Exception as e:
-                    logging.error(f"Virhe haettaessa ETF-osinkoa {etf['name']}: {e}")
-                    continue
-        else:
-            logging.info(f"ETF {etf['name']} on kasvava (Acc) – ei osinkoa.")
-
-    # Järjestetään ex-daten mukaan
-    dividend_list.sort(key=lambda x: x.get("ex_date", "99.99.9999"))
+        
+        dividend_list.sort(key=lambda x: x['date'], reverse=True)
+        
+    except Exception as e:
+        logging.error(f"Virhe luettaessa CSV: {e}")
+        return [], 0
+    
     return dividend_list, round(total_yearly, 2)
 
 # =============================================
@@ -510,12 +413,12 @@ async def send_daily_report():
     if link: msg += f"🔗 LINK: €{link:,.2f}\n"
     else: msg += "🔗 LINK: Laga ma helin\n"
 
-    dividend_list, total_div = get_dividend_details()
+    _, total_div = get_dividend_details()
     months, target_date = calculate_goal(TOTAL_INVESTMENTS, TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur'])
     msg += f"\n🎯 *100k € tavoite*\n"
     msg += f"📈 Puuttuu: €{100000 - TOTAL_INVESTMENTS:,.2f}\n"
     msg += f"📅 Arvio: {target_date.strftime('%d.%m.%Y')} ({months} kk)\n"
-    msg += f"💵 Osingot/v (arvio): €{total_div:,.2f}\n"
+    msg += f"💵 Osingot/v (todelliset): €{total_div:,.2f}\n"
 
     today = datetime.now()
     if today.day == 10:
@@ -569,7 +472,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/testapi - Tijaabi API-yada\n"
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
-        "/dividends - Osingot eriteltynä\n"
+        "/dividends - Osingot eriteltynä (TODELLISET)\n"
         "/recommend - Sijoitusanalyysi & suositukset\n\n"
         "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin!",
         parse_mode="Markdown"
@@ -593,7 +496,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/testapi - Tijaabi API-yada\n"
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
-        "/dividends - Osingot eriteltynä\n"
+        "/dividends - Osingot eriteltynä (TODELLISET)\n"
         "/recommend - Sijoitusanalyysi & suositukset\n\n"
         "💰 *DCA:* €100/bil (crypto) + €450/kk (Trading 212)\n"
         "📊 *Warbixin maalinle:* 9:00 subax",
@@ -651,9 +554,6 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-# =============================================
-# PORTFOLIO – KORJATTU (isä molemmissa)
-# =============================================
 async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📊 *Portfolio-gaaga*\n━━━━━━━━━━━━━━━━━\n\n"
     msg += f"💰 *Wadarta guud:* €{TOTAL_INVESTMENTS:,.2f}\n"
@@ -662,7 +562,6 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg += f"📈 *Stock holdings:* {len(STOCK_HOLDINGS)} holdings\n"
     msg += f"🪙 *Crypto holdings:* {len(CRYPTO_HOLDINGS)} holdings\n\n"
 
-    # Trading 212 – isän portfolio
     msg += f"📊 *Trading 212 -kuukausisijoitus*\n"
     msg += f"👤 *{TRADING212_PLAN['name']}*\n"
     msg += f"💰 €{TRADING212_PLAN['amount_eur']}/kk (10. päivä)\n"
@@ -670,7 +569,6 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg += f"💵 Arvo: €{TRADING212_PLAN['total_value']:,.2f}\n"
     msg += f"📈 Voitto: +{TRADING212_PLAN['profit_percent']:.2f}%\n\n"
 
-    # Perheen holdings – isä mukana
     msg += "👨‍👩‍👧‍👦 *Perheen holdings*\n"
     for member in FAMILY_HOLDINGS:
         msg += f"• {member['name']}: {member['holdings']} hold. = €{member['value']:,.2f} (+{member['profit_percent']:.2f}%)\n"
@@ -765,17 +663,14 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
-# 13. OSINGOT – KORJATTU (kvartaali + vuosi, tarkka summa, maksupäivä)
+# 13. OSINGOT – TODELLISET CSV:STÄ
 # =============================================
 async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         dividend_list, total_yearly = get_dividend_details()
 
         if not dividend_list:
-            await update.message.reply_text(
-                "⚠️ Osinkotietoja ei löytynyt tällä hetkellä.\n"
-                "Varmista, että omistat osinkoa maksavia osakkeita tai ETF:iä."
-            )
+            await update.message.reply_text("⚠️ Osinkotietoja ei löytynyt. Varmista, että dividends.csv on tallennettu.")
             return
 
         max_per_msg = 15
@@ -786,27 +681,20 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chunk = dividend_list[sent_count:sent_count + max_per_msg]
             sent_count += len(chunk)
 
-            msg = "💰 *Tulevat osinkomaksut (historian perusteella)*\n"
+            msg = "💰 *TODELLISET osinkomaksut (Trading 212)*\n"
             msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
             for div in chunk:
-                div_q = div['dividend_per_share']          # kvartaaliosinko
-                div_y = div_q * 4                          # vuosiosinko per osake
-                yearly_total = div['yearly_total']         # quantity × div_y
-                quantity = div['quantity']
-                
+                msg += f"📅 *{div['date']}*\n"
                 msg += f"🔹 *{div['name']}* ({div['symbol']})\n"
-                msg += f"   📊 Tyyppi: {div['type']}\n"
-                msg += f"   💰 Osinko/osake (kvartaali): €{div_q:.4f}\n"
-                msg += f"   💰 Vuosiosinko/osake: €{div_y:.4f}\n"
-                msg += f"   📦 Sinä saat vuodessa: {quantity:.2f} × €{div_y:.4f} = *€{yearly_total:,.2f}*\n"
-                msg += f"   📅 Ex-date: {div['ex_date']}\n"
-                msg += f"   💳 Maksupäivä: {div['payout_date']}\n"
+                msg += f"   📦 {div['quantity']:.2f} × €{div['price']:.4f} = *€{div['amount']:,.2f}*\n"
+                if div['tax'] > 0:
+                    msg += f"   🏦 Lähdevero: €{div['tax']:.2f}\n"
                 msg += "\n"
 
             if sent_count >= total_items:
-                msg += f"📊 *Osinkoja yhteensä vuodessa:* €{total_yearly:,.2f}\n"
-                msg += "ℹ️ *Huom:* Kasvavat ETF:t (Acc) eivät maksa osinkoa."
+                msg += f"📊 *Osinkoja yhteensä (12 kk):* €{total_yearly:,.2f}"
+                msg += "\nℹ️ *Lähde:* Trading 212 -osinkohistoria"
 
             await update.message.reply_text(msg, parse_mode="Markdown")
 
