@@ -318,6 +318,7 @@ def get_dividend_details():
             })
         except Exception as e:
             logging.error(f"Virhe haettaessa osinkoa {stock['symbol']}: {e}")
+            continue
 
     # --- 2. ETF:T (VAIN JAKAVAT) ---
     # Jakavat ETF:t – nämä maksavat osinkoa
@@ -394,6 +395,7 @@ def get_dividend_details():
                     })
                 except Exception as e:
                     logging.error(f"Virhe haettaessa ETF-osinkoa {etf['name']}: {e}")
+                    continue
         else:
             # Kasvava ETF (Acc) – ei maksa osinkoa
             logging.info(f"ETF {etf['name']} on kasvava (Acc) – ei osinkoa.")
@@ -502,7 +504,6 @@ async def send_daily_report():
     if link: msg += f"🔗 LINK: €{link:,.2f}\n"
     else: msg += "🔗 LINK: Laga ma helin\n"
 
-    # Osingot
     dividend_list, total_div = get_dividend_details()
     months, target_date = calculate_goal(TOTAL_INVESTMENTS, TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur'])
     msg += f"\n🎯 *100k € tavoite*\n"
@@ -752,34 +753,38 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
-# 13. OSINGOT (KORJATTU – HISTORIA + ETF:T)
+# 13. OSINGOT (KORJATTU – TRY-EXCEPT)
 # =============================================
 async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    dividend_list, total_yearly = get_dividend_details()
+    try:
+        dividend_list, total_yearly = get_dividend_details()
 
-    if not dividend_list:
-        await update.message.reply_text(
-            "⚠️ Osinkotietoja ei löytynyt tällä hetkellä.\n"
-            "Varmista, että omistat osinkoa maksavia osakkeita tai ETF:iä."
-        )
-        return
+        if not dividend_list:
+            await update.message.reply_text(
+                "⚠️ Osinkotietoja ei löytynyt tällä hetkellä.\n"
+                "Varmista, että omistat osinkoa maksavia osakkeita tai ETF:iä."
+            )
+            return
 
-    msg = "💰 *Tulevat osinkomaksut (historian perusteella)*\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        msg = "💰 *Tulevat osinkomaksut (historian perusteella)*\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-    for div in dividend_list:
-        msg += f"🔹 *{div['name']}* ({div['symbol']})\n"
-        msg += f"   📊 Tyyppi: {div['type']}\n"
-        msg += f"   💰 Viimeisin osinko/osake: €{div['dividend_per_share']:.4f}\n"
-        msg += f"   📦 Sinä saat (12 kk): {div['quantity']:.2f} × €{div['yearly_total']/div['quantity']:.4f} = *€{div['yearly_total']:,.2f}*\n"
-        msg += f"   📅 Ex-date: {div['ex_date']}\n"
-        msg += f"   💳 Maksupäivä: {div['payout_date']}\n"
-        msg += "\n"
+        for div in dividend_list:
+            msg += f"🔹 *{div['name']}* ({div['symbol']})\n"
+            msg += f"   📊 Tyyppi: {div['type']}\n"
+            msg += f"   💰 Viimeisin osinko/osake: €{div['dividend_per_share']:.4f}\n"
+            msg += f"   📦 Sinä saat (12 kk): {div['quantity']:.2f} × €{div['yearly_total']/div['quantity']:.4f} = *€{div['yearly_total']:,.2f}*\n"
+            msg += f"   📅 Ex-date: {div['ex_date']}\n"
+            msg += f"   💳 Maksupäivä: {div['payout_date']}\n"
+            msg += "\n"
 
-    msg += f"📊 *Osinkoja yhteensä vuodessa:* €{total_yearly:,.2f}"
-    msg += "\n\nℹ️ *Huom:* Kasvavat ETF:t (Acc) eivät maksa osinkoa, vaan sijoittavat uudelleen."
+        msg += f"📊 *Osinkoja yhteensä vuodessa:* €{total_yearly:,.2f}"
+        msg += "\n\nℹ️ *Huom:* Kasvavat ETF:t (Acc) eivät maksa osinkoa, vaan sijoittavat uudelleen."
 
-    await update.message.reply_text(msg, parse_mode="Markdown")
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Virhe dividends-komennossa: {e}")
+        await update.message.reply_text(f"⚠️ Virhe haettaessa osinkoja: {str(e)[:100]}")
 
 # =============================================
 # 14. SUOSITUKSET (BUY/HOLD/SELL)
