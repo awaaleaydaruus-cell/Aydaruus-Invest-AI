@@ -272,7 +272,7 @@ def get_recommendation(current_price, old_price, name):
         return "🟡 HOLD", f"{change:+.1f}% (neutraali)"
 
 # =============================================
-# 7. OSINGOT – LUE CSV:STÄ (TODELLISET)
+# 7. OSINGOT – LUE CSV:STÄ (TODELLISET MENNEET)
 # =============================================
 
 def get_dividend_details():
@@ -313,7 +313,112 @@ def get_dividend_details():
     return dividend_list, round(total_yearly, 2)
 
 # =============================================
-# 8. TAVOITE (100k)
+# 8. TULEVAT OSINGOT
+# =============================================
+
+def get_upcoming_dividends():
+    """Hakee tulevat osingot yfinance:stä"""
+    upcoming = []
+    total_upcoming = 0.0
+    today = datetime.now().date()
+
+    for stock in STOCK_HOLDINGS:
+        try:
+            ticker = yf.Ticker(stock["symbol"])
+            info = ticker.info
+
+            div_rate = info.get("dividendRate")
+            ex_date_ts = info.get("exDividendDate")
+            payout_ts = info.get("dividendDate")
+
+            if ex_date_ts:
+                ex_date = datetime.fromtimestamp(ex_date_ts).date()
+                if ex_date >= today:
+                    quarterly_div = (div_rate / 4) if div_rate else 0
+                    if quarterly_div > 0:
+                        amount = quarterly_div * stock["quantity"]
+                    else:
+                        div_hist = ticker.dividends
+                        if not div_hist.empty:
+                            last_div = div_hist.iloc[-1]
+                            amount = last_div * stock["quantity"]
+                            quarterly_div = last_div
+                        else:
+                            continue
+                    
+                    total_upcoming += amount
+                    
+                    if payout_ts:
+                        payout_date = datetime.fromtimestamp(payout_ts).strftime('%d.%m.%Y')
+                    else:
+                        payout_est = ex_date + timedelta(days=30)
+                        payout_date = payout_est.strftime('%d.%m.%Y') + " (arvio)"
+
+                    upcoming.append({
+                        "symbol": stock["symbol"],
+                        "name": stock["name"],
+                        "type": "Osake",
+                        "amount": round(amount, 2),
+                        "dividend_per_share": round(quarterly_div, 4),
+                        "ex_date": ex_date.strftime('%d.%m.%Y'),
+                        "payout_date": payout_date,
+                        "quantity": stock["quantity"]
+                    })
+        except Exception as e:
+            logging.error(f"Virhe {stock['symbol']}: {e}")
+
+    # ETF:t (arvio)
+    ETF_TICKER_MAP = {
+        "iShares Core S&P 500": "SPY",
+        "Vanguard S&P 500": "VOO",
+        "iShares Core MSCI World": "URTH",
+        "Vanguard FTSE All-World": "VWRA",
+        "iShares NASDAQ 100": "QQQ",
+        "SPDR S&P 500": "SPY5",
+        "Vanguard S&P 500": "VUSA",
+        "iShares Core S&P 500 Dist": "IUSA",
+        "iShares NASDAQ 100": "EQQQ",
+        "SPDR S&P 400 Mid Cap": "SPY4",
+        "iShares Core MSCI Europe": "MEUD",
+        "JPMorgan Nasdaq Premium": "JNQ",
+        "JPMorgan US Equity Premium": "JUEQ",
+        "JPMorgan Global Equity Premium": "JGEP",
+        "Vanguard FTSE All-World High Div": "VHYL",
+        "Global X Nasdaq 100 Covered Call": "QYLD",
+        "VanEck Semiconductor": "SMH",
+        "SPDR S&P US Dividend Aristocrats": "UDVD"
+    }
+
+    for etf in ETF_HOLDINGS:
+        ticker = ETF_TICKER_MAP.get(etf["name"])
+        if ticker:
+            try:
+                etf_ticker = yf.Ticker(ticker)
+                div_hist = etf_ticker.dividends
+                if not div_hist.empty:
+                    last_div = div_hist.iloc[-1]
+                    ex_date = div_hist.index[-1] + timedelta(days=30)
+                    if ex_date.date() >= datetime.now().date():
+                        amount = last_div * etf["quantity"]
+                        total_upcoming += amount
+                        upcoming.append({
+                            "symbol": ticker,
+                            "name": etf["name"],
+                            "type": "ETF (arvio)",
+                            "amount": round(amount, 2),
+                            "dividend_per_share": round(last_div, 4),
+                            "ex_date": ex_date.strftime('%d.%m.%Y') + " (arvio)",
+                            "payout_date": (ex_date + timedelta(days=30)).strftime('%d.%m.%Y') + " (arvio)",
+                            "quantity": etf["quantity"]
+                        })
+            except Exception as e:
+                logging.error(f"Virhe ETF-osinkoa {etf['name']}: {e}")
+
+    upcoming.sort(key=lambda x: x['payout_date'])
+    return upcoming, round(total_upcoming, 2)
+
+# =============================================
+# 9. TAVOITE (100k)
 # =============================================
 
 def calculate_goal(current_value, monthly_savings, yearly_return_pct=0.07):
@@ -330,7 +435,7 @@ def calculate_goal(current_value, monthly_savings, yearly_return_pct=0.07):
     return months, datetime.now() + timedelta(days=months*30)
 
 # =============================================
-# 9. UUTISET
+# 10. UUTISET
 # =============================================
 
 def get_news(query, limit=3):
@@ -371,7 +476,7 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
-# 10. WARBIXIN MAALINLE
+# 11. WARBIXIN MAALINLE
 # =============================================
 
 async def send_daily_report():
@@ -436,14 +541,14 @@ async def send_daily_report():
         logging.error(f"Warbixin maalinle ah waa ay fashilantay: {e}")
 
 # =============================================
-# 11. QORSHEYNTA
+# 12. QORSHEYNTA
 # =============================================
 scheduler = BackgroundScheduler()
 scheduler.add_job(send_daily_report, 'cron', hour=9, minute=0, id="daily_report", replace_existing=True)
 scheduler.start()
 
 # =============================================
-# 12. TELEGRAM KOMENNOT
+# 13. TELEGRAM KOMENNOT
 # =============================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -472,7 +577,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/testapi - Tijaabi API-yada\n"
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
-        "/dividends - Osingot eriteltynä (TODELLISET)\n"
+        "/dividends - Menneet osingot (TODELLISET)\n"
+        "/upcoming - Tulevat osingot\n"
         "/recommend - Sijoitusanalyysi & suositukset\n\n"
         "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin!",
         parse_mode="Markdown"
@@ -496,7 +602,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/testapi - Tijaabi API-yada\n"
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
-        "/dividends - Osingot eriteltynä (TODELLISET)\n"
+        "/dividends - Menneet osingot (TODELLISET)\n"
+        "/upcoming - Tulevat osingot\n"
         "/recommend - Sijoitusanalyysi & suositukset\n\n"
         "💰 *DCA:* €100/bil (crypto) + €450/kk (Trading 212)\n"
         "📊 *Warbixin maalinle:* 9:00 subax",
@@ -663,7 +770,7 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
-# 13. OSINGOT – TODELLISET CSV:STÄ
+# 14. MENNEET OSINGOT (CSV)
 # =============================================
 async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -681,7 +788,7 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chunk = dividend_list[sent_count:sent_count + max_per_msg]
             sent_count += len(chunk)
 
-            msg = "💰 *TODELLISET osinkomaksut (Trading 212)*\n"
+            msg = "💰 *Menneet osinkomaksut (Trading 212)*\n"
             msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
             for div in chunk:
@@ -703,7 +810,55 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe haettaessa osinkoja: {str(e)[:100]}")
 
 # =============================================
-# 14. SUOSITUKSET (BUY/HOLD/SELL)
+# 15. TULEVAT OSINGOT
+# =============================================
+async def upcoming(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        upcoming_list, total_upcoming = get_upcoming_dividends()
+
+        if not upcoming_list:
+            await update.message.reply_text("⚠️ Tulevia osinkoja ei löytynyt tällä hetkellä.")
+            return
+
+        # Järjestä maksupäivän mukaan (aikaisin ensin)
+        upcoming_list.sort(key=lambda x: datetime.strptime(x['payout_date'].split(' ')[0], '%d.%m.%Y'))
+
+        # Ryhmittele kuukausittain
+        monthly = {}
+        yearly_total = 0
+        for div in upcoming_list:
+            payout_clean = div['payout_date'].split(' ')[0]
+            month_key = payout_clean[3:5] + "/" + payout_clean[6:10]
+            if month_key not in monthly:
+                monthly[month_key] = 0
+            monthly[month_key] += div['amount']
+            yearly_total += div['amount']
+
+        msg = "📅 *TULEVAT OSINGOT*\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        for div in upcoming_list:
+            msg += f"🔹 *{div['name']}* ({div['symbol']})\n"
+            msg += f"   💰 €{div['amount']:,.2f}\n"
+            msg += f"   📅 Maksupäivä: {div['payout_date']}\n"
+            msg += "\n"
+
+        msg += "━━━━━━━━━━━━━━━━━━━━━━\n"
+        msg += "📊 *Kuukausittain:*\n"
+        for month, total in sorted(monthly.items()):
+            msg += f"   📅 {month}: €{total:,.2f}\n"
+
+        msg += f"\n💰 *Tulevia osinkoja yhteensä:* €{yearly_total:,.2f}"
+        msg += "\n📅 *Ajanjakso:* lähimmät 6 kuukautta"
+
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
+    except Exception as e:
+        logging.error(f"Virhe upcoming-komennossa: {e}")
+        await update.message.reply_text(f"⚠️ Virhe haettaessa tulevia osinkoja: {str(e)[:100]}")
+
+# =============================================
+# 16. SUOSITUKSET (BUY/HOLD/SELL)
 # =============================================
 async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📊 *Sijoitusanalyysi & suositukset*\n"
@@ -785,7 +940,7 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
-# 15. VIRHEIDENKÄSITTELY
+# 17. VIRHEIDENKÄSITTELY
 # =============================================
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.error(f"Virhe: {context.error}")
@@ -793,7 +948,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("⚠️ Jokin meni pieleen. Yritä uudelleen.")
 
 # =============================================
-# 16. FLASK
+# 18. FLASK
 # =============================================
 flask_app = Flask(__name__)
 
@@ -805,7 +960,7 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=PORT, debug=False)
 
 # =============================================
-# 17. PÄÄFUNKTIO
+# 19. PÄÄFUNKTIO
 # =============================================
 def run_bot():
     app = Application.builder().token(TOKEN).build()
@@ -822,6 +977,7 @@ def run_bot():
     app.add_handler(CommandHandler("news", news))
     app.add_handler(CommandHandler("goal", goal))
     app.add_handler(CommandHandler("dividends", dividends))
+    app.add_handler(CommandHandler("upcoming", upcoming))
     app.add_handler(CommandHandler("recommend", recommend))
     app.add_error_handler(error_handler)
     app.run_polling()
