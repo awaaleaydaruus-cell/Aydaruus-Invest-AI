@@ -50,7 +50,6 @@ def init_db():
 init_db()
 
 def get_all_user_ids():
-    """Hakee kaikki käyttäjä-ID:t tietokannasta."""
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
     c.execute("SELECT id FROM users")
@@ -62,7 +61,6 @@ def get_all_user_ids():
 # 4. PORTFOLIO HOLDINGS
 # =============================================
 
-# ETF:t (18 kpl) — hinnat EUR, symbolit korjattu yfinance-yhteensopiviksi (.L = LSE)
 ETF_HOLDINGS = [
     {"isin": "IE00B5BMR087", "symbol": "SPY5L.L",  "name": "iShares Core S&P 500 UCITS ETF",                      "quantity": 1.3195215,   "price": 711.48},
     {"isin": "IE00BFMXXD54", "symbol": "VUAA.L",   "name": "Vanguard S&P 500 UCITS ETF",                          "quantity": 6.78430694,  "price": 127.59},
@@ -84,7 +82,6 @@ ETF_HOLDINGS = [
     {"isin": "IE00B6YX5D40", "symbol": "UDVD.L",   "name": "SPDR S&P US Dividend Aristocrats UCITS ETF",          "quantity": 10.69542998, "price": 74.53},
 ]
 
-# Osakkeet (27 kpl) — hinnat USD
 STOCK_HOLDINGS = [
     {"isin": "US88160R1014", "symbol": "TSLA",  "name": "Tesla",                         "quantity": 1.77834002, "price": 407.59},
     {"isin": "US0231351067", "symbol": "AMZN",  "name": "Amazon",                        "quantity": 2.75130172, "price": 245.74},
@@ -115,7 +112,6 @@ STOCK_HOLDINGS = [
     {"isin": "US7475251036", "symbol": "QCOM",  "name": "Qualcomm",                      "quantity": 0.82236603, "price": 188.9},
 ]
 
-# Kryptot — ulkoiset DCA-hankinnat
 CRYPTO_HOLDINGS = [
     {"symbol": "bitcoin", "name": "BTC", "quantity": 0.00674376, "value_eur": 379.43},
     {"symbol": "ethereum", "name": "ETH", "quantity": 0.36953452, "value_eur": 587.15},
@@ -128,7 +124,6 @@ CRYPTO_HOLDINGS = [
     {"symbol": "chainlink", "name": "LINK", "quantity": 3.40208837, "value_eur": 23.86},
 ]
 
-# DCA-suunnitelmat
 DCA_PLAN = {
     "name": "Aydaurus Dream",
     "amount_eur": 100,
@@ -165,21 +160,15 @@ CURRENT_QTY_BY_ISIN = {h["isin"]: h["quantity"] for h in ETF_HOLDINGS}
 CURRENT_QTY_BY_ISIN.update({h["isin"]: h["quantity"] for h in STOCK_HOLDINGS})
 
 # =============================================
-# 5. PERHEENJÄSENTEN OMISTUKSET (AUTOMAATTINEN SKALAUS)
+# 5. PERHEENJÄSENTEN OMISTUKSET
 # =============================================
-
 def generate_family_ownerships():
-    """Luo jokaiselle perheenjäsenelle arvioidut omistukset skaalaamalla Aydaruusin omistuksia.
-    Palauttaa sanakirjan {nimi: {isin: määrä}}.
-    """
-    aydaruus_value = TRADING212_PLAN["total_value"]  # 27562.45
+    aydaruus_value = TRADING212_PLAN["total_value"]
     family_ownerships = {}
-
     for member in FAMILY_HOLDINGS:
         name = member["name"].lower()
         value = member["value"]
         if name == "aydaruus":
-            # Aydaruus itse käyttää tarkkoja omistuksia
             family_ownerships["aydaruus"] = CURRENT_QTY_BY_ISIN.copy()
         else:
             scale = value / aydaruus_value if aydaruus_value > 0 else 0
@@ -187,16 +176,13 @@ def generate_family_ownerships():
             for isin, qty in CURRENT_QTY_BY_ISIN.items():
                 scaled[isin] = qty * scale
             family_ownerships[name] = scaled
-
     return family_ownerships
 
-# Generoidaan sanakirja
 FAMILY_OWNERSHIPS = generate_family_ownerships()
 
 # =============================================
-# 6. HINTA-APIT (EUR)
+# 6. HINTA-APIT
 # =============================================
-
 def get_crypto_price(symbol):
     symbol_map = {
         "bitcoin": "BTC", "ethereum": "ETH", "solana": "SOL",
@@ -263,9 +249,8 @@ def get_etf_price(symbol):
     return get_stock_price(symbol)
 
 # =============================================
-# 7. HISTORIALLISET HINNAT (30 päivää) — /recommend -komentoa varten
+# 7. HISTORIALLISET HINNAT
 # =============================================
-
 def get_crypto_historical(symbol, days=30):
     try:
         url = f"https://api.coingecko.com/api/v3/coins/{symbol}/market_chart?vs_currency=eur&days={days}"
@@ -305,59 +290,15 @@ def _load_dividends_dataframe():
     df['Date'] = df['Time'].apply(lambda t: datetime.strptime(str(t).split(' ')[0], '%Y-%m-%d'))
     return df.sort_values('Date')
 
-def get_dividend_details():
-    try:
-        df = _load_dividends_dataframe()
-    except Exception as e:
-        logging.error(f"Virhe luettaessa CSV: {e}")
-        return [], 0.0
-
-    dividend_list = []
-    for _, row in df.iterrows():
-        dividend_list.append({
-            "date": row['Date'].strftime('%d.%m.%Y'),
-            "date_sort": row['Date'],
-            "isin": row['ISIN'],
-            "symbol": row['Ticker'],
-            "name": row['Name'],
-            "amount": round(row['Total'], 2),
-            "quantity": row['Shares'],
-            "per_share": round(row['PerShare'], 4),
-            "currency": row.get('Currency (Price / share)', ''),
-            "tax": round(row['Tax'], 2),
-        })
-    dividend_list.sort(key=lambda x: x['date_sort'], reverse=True)
-    total = round(sum(d['amount'] for d in dividend_list), 2)
-    return dividend_list, total
-
-def get_dividends_by_month(dividend_list):
-    monthly = {}
-    for d in dividend_list:
-        key = d['date_sort'].strftime('%m/%Y')
-        monthly[key] = monthly.get(key, 0.0) + d['amount']
-    monthly = {k: round(v, 2) for k, v in monthly.items()}
-    yearly_total = round(sum(monthly.values()), 2)
-    return monthly, yearly_total
-
-# =============================================
-# 9. TULEVAT OSINGOT — ARVIO CSV-HISTORIAN PERUSTEELLA (perheenjäsenille)
-# =============================================
-
 def get_upcoming_dividends_estimated(until_date=None, owner="aydaruus"):
-    """
-    Arvioi tulevat osingot annetulle omistajalle (owner).
-    owner: "aydaruus", "ismahaan", "ilyaas", "farhia", "mahamed", "yahye"
-    """
     try:
         df = _load_dividends_dataframe()
     except Exception as e:
-        logging.error(f"Virhe CSV:n luvussa (upcoming-arvio): {e}")
+        logging.error(f"Virhe CSV:n luvussa: {e}")
         return [], {}, 0.0
 
-    owner_lower = owner.lower()
-    qty_by_isin = FAMILY_OWNERSHIPS.get(owner_lower)
-    if qty_by_isin is None:
-        # Omistajaa ei löydy
+    qty_by_isin = FAMILY_OWNERSHIPS.get(owner.lower(), {})
+    if not qty_by_isin:
         return [], {}, 0.0
 
     projected = []
@@ -369,12 +310,12 @@ def get_upcoming_dividends_estimated(until_date=None, owner="aydaruus"):
         if len(group) < 2:
             continue
         qty = qty_by_isin.get(isin)
-        if not qty or qty == 0:
+        if not qty:
             continue
         name = group.iloc[-1]['Name']
         ticker = group.iloc[-1]['Ticker']
         dates = group['Date'].tolist()
-        intervals = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
+        intervals = [(dates[i] - dates[i-1]).days for i in range(1, len(dates))]
         avg_interval = sum(intervals) / len(intervals)
         last_row = group.iloc[-1]
         last_per_share = last_row['PerShare']
@@ -405,9 +346,8 @@ def get_upcoming_dividends_estimated(until_date=None, owner="aydaruus"):
     return projected, monthly, round(yearly_total, 2)
 
 # =============================================
-# 10. TAVOITELASKENTA (Yleiset apufunktiot)
+# 9. TAVOITELASKENTA
 # =============================================
-
 def calculate_goal(current_value, monthly_savings, target=100000, yearly_return_pct=0.07):
     remaining = target - current_value
     if remaining <= 0:
@@ -432,10 +372,21 @@ def calculate_compounding_crossover(current_value, monthly_savings, yearly_retur
         months += 1
     return None, None, None
 
-# =============================================
-# 11. UUTISET
-# =============================================
+def calculate_goal_for_member(member_name, member_value, monthly_savings=0, yearly_return_pct=0.07):
+    """Laskee tavoitteet yhdelle perheenjäsenelle (ilman kuukausisäästöä)."""
+    goals = [10000, 20000, 50000, 100000]
+    result = []
+    for target in goals:
+        if member_value >= target:
+            result.append({"target": target, "months": 0, "date": datetime.now(), "achieved": True})
+        else:
+            months, date = calculate_goal(member_value, monthly_savings, target, yearly_return_pct)
+            result.append({"target": target, "months": months, "date": date, "achieved": False})
+    return result
 
+# =============================================
+# 10. UUTISET
+# =============================================
 def get_news(query, limit=3):
     try:
         url = f"https://news.google.com/rss/search?q={query}&hl=fi&gl=FI&ceid=FI:fi"
@@ -478,9 +429,8 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /news: {str(e)[:200]}")
 
 # =============================================
-# 12. AAMURAPORTTI (lähetetään kaikille käyttäjille)
+# 11. AAMURAPORTTI
 # =============================================
-
 async def send_daily_report():
     try:
         user_ids = get_all_user_ids()
@@ -510,12 +460,11 @@ async def send_daily_report():
                             ("🟣 ADA", ada), ("🔗 LINK", link)]:
             msg += f"{label}: €{val:,.2f}\n" if val else f"{label}: Laga ma helin\n"
 
-        _, total_div = get_dividend_details()
-        months, target_date = calculate_goal(TOTAL_INVESTMENTS + TOTAL_CRYPTO, TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur'])
-        msg += f"\n🎯 *100k € tavoite (yhteensä)*\n"
-        msg += f"📈 Puuttuu: €{100000 - (TOTAL_INVESTMENTS + TOTAL_CRYPTO):,.2f}\n"
-        msg += f"📅 Arvio: {target_date.strftime('%d.%m.%Y')} ({months} kk)\n"
-        msg += f"💵 Osingot (12 kk, todelliset): €{total_div:,.2f}\n"
+        msg += f"\n👨‍👩‍👧‍👦 *Perheen salkut:*\n"
+        for member in FAMILY_HOLDINGS:
+            msg += f"• {member['name']}: €{member['value']:,.2f} (+{member['profit_percent']:.1f}%)\n"
+
+        msg += f"\n💵 Osingot (12 kk, todelliset): €{sum(get_dividend_details()[1]):,.2f}\n"
 
         today = datetime.now()
         if today.day == 10:
@@ -526,7 +475,6 @@ async def send_daily_report():
             next_year = today.year if today.month < 12 else today.year + 1
             msg += f"\n📌 Togga xiga: 10-{next_month:02d}-{next_year}"
 
-        # Lähetä jokaiselle
         app = Application.builder().token(TOKEN).build()
         for uid in user_ids:
             try:
@@ -536,21 +484,19 @@ async def send_daily_report():
     except Exception as e:
         logging.error(f"Virhe send_daily_report: {e}")
 
-# =============================================
-# 13. AJOITUS (BackgroundScheduler + synkroninen wrapper)
-# =============================================
-
 def send_daily_report_sync():
-    """Synkroninen wrapper async-funktiolle."""
     import asyncio
     asyncio.run(send_daily_report())
 
+# =============================================
+# 12. AJOITUS
+# =============================================
 scheduler = BackgroundScheduler()
 scheduler.add_job(send_daily_report_sync, 'cron', hour=9, minute=0, id="daily_report", replace_existing=True)
 scheduler.start()
 
 # =============================================
-# 14. TELEGRAM KOMENNOT
+# 13. TELEGRAM KOMENNOT
 # =============================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -577,10 +523,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/crypto - Muuji crypto holdings\n"
             "/testapi - Tijaabi API-yada\n"
             "/news - Uutiset omistuksista\n"
-            "/goal - Tavoitteet (Trading212, krypto ja yhteensä)\n"
+            "/goal - Tavoitteet (Trading212, krypto ja perhe)\n"
             "/dividends - Näytä kaikkien perheenjäsenten osingot eriteltynä\n"
-            "/dividends [nimi] - Näytä vain yhden henkilön osingot (esim. /dividends ismahaan)\n"
-            "/recommend - Sijoitusanalyysi & suositukset\n\n"
+            "/recommend - Sijoitusanalyysi & suositukset\n"
+            "/testreport - Testaa aamuraportti (manuaalinen)\n\n"
             "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin!",
             parse_mode="Markdown"
         )
@@ -610,10 +556,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/crypto - Muuji crypto holdings\n"
             "/testapi - Tijaabi API-yada\n"
             "/news - Uutiset omistuksista\n"
-            "/goal - Tavoitteet (Trading212, krypto ja yhteensä)\n"
+            "/goal - Tavoitteet (Trading212, krypto ja perhe)\n"
             "/dividends - Näytä kaikkien perheenjäsenten osingot eriteltynä\n"
-            "/dividends [nimi] - Näytä vain yhden henkilön osingot (esim. /dividends ismahaan)\n"
-            "/recommend - Sijoitusanalyysi & suositukset\n\n"
+            "/recommend - Sijoitusanalyysi & suositukset\n"
+            "/testreport - Testaa aamuraportti (manuaalinen)\n\n"
             "💰 *DCA:* €100/bil (crypto) + €450/kk (Trading 212)\n"
             "📊 *Warbixin maalinle:* 9:00 subax",
             parse_mode="Markdown"
@@ -648,9 +594,6 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         msg += f"\n💰 *Crypto holdings:* €{TOTAL_CRYPTO:,.2f}\n"
         msg += f"💵 *Wadarta guud:* €{TOTAL_INVESTMENTS:,.2f}"
-
-        months, target_date = calculate_goal(TOTAL_INVESTMENTS + TOTAL_CRYPTO, TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur'])
-        msg += f"\n\n🎯 *100k €:* puuttuu €{100000 - (TOTAL_INVESTMENTS + TOTAL_CRYPTO):,.2f}, arvio {target_date.strftime('%d.%m.%Y')} ({months} kk)"
 
         await update.message.reply_text(msg, parse_mode="Markdown")
     except Exception as e:
@@ -766,30 +709,18 @@ async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /testapi: {str(e)[:200]}")
 
 # =============================================
-# 15. UUSI /goal — kolme erillistä osiota
+# 14. GOAL — AYDARUUS + PERHE
 # =============================================
-
 async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # 1) Trading212
+        msg = "🎯 *Sijoitustavoitteet*\n━━━━━━━━━━━━━━━━━\n\n"
+
+        # 1) Trading212 (Aydaruus)
         t212_value = TOTAL_INVESTMENTS
         t212_savings = TRADING212_PLAN['amount_eur']
         t212_goals = [50000, 100000]
 
-        # 2) Krypto (Binance / DCA)
-        crypto_value = TOTAL_CRYPTO
-        crypto_savings = DCA_PLAN['amount_eur']
-        crypto_goals = [10000, 20000, 50000, 100000]
-
-        # 3) Yhteensä
-        total_value = t212_value + crypto_value
-        total_savings = t212_savings + crypto_savings
-        total_goals = [50000, 100000, 250000, 500000, 1000000]
-
-        msg = "🎯 *Sijoitustavoitteet*\n━━━━━━━━━━━━━━━━━\n\n"
-
-        # --- Trading212 ---
-        msg += "📊 *Trading212 (450 €/kk)*\n"
+        msg += "📊 *Trading212 (Aydaruus, 450 €/kk)*\n"
         msg += f"💰 Nykyinen arvo: €{t212_value:,.2f}\n"
         for target in t212_goals:
             if t212_value >= target:
@@ -797,7 +728,6 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 months, date = calculate_goal(t212_value, t212_savings, target=target)
                 msg += f"   🥅 *{target:,.0f} €*: {date.strftime('%d.%m.%Y')} ({months} kk), puuttuu €{target - t212_value:,.2f}\n"
-        # Compounding-piste vain Trading212:lle
         cross_months, cross_date, cross_interest = calculate_compounding_crossover(t212_value, t212_savings)
         msg += "   📈 *Compounding-piste*: "
         if cross_months is not None:
@@ -809,8 +739,11 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += "ei saavutettu 50 v sisällä\n"
         msg += "\n"
 
-        # --- Krypto ---
-        msg += "🪙 *Binance / krypto DCA (100 €/kk)*\n"
+        # 2) Krypto (Aydaruus)
+        crypto_value = TOTAL_CRYPTO
+        crypto_savings = DCA_PLAN['amount_eur']
+        crypto_goals = [10000, 20000, 50000, 100000]
+        msg += "🪙 *Krypto DCA (Aydaruus, 100 €/kk)*\n"
         msg += f"💰 Nykyinen arvo: €{crypto_value:,.2f}\n"
         for target in crypto_goals:
             if crypto_value >= target:
@@ -820,8 +753,11 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg += f"   🥅 *{target:,.0f} €*: {date.strftime('%d.%m.%Y')} ({months} kk), puuttuu €{target - crypto_value:,.2f}\n"
         msg += "\n"
 
-        # --- Yhteensä ---
-        msg += "💎 *Yhteensä (Trading212 + krypto, 550 €/kk)*\n"
+        # 3) Yhteensä (Aydaruus)
+        total_value = t212_value + crypto_value
+        total_savings = t212_savings + crypto_savings
+        total_goals = [50000, 100000, 250000, 500000, 1000000]
+        msg += "💎 *Yhteensä (Aydaruus, 550 €/kk)*\n"
         msg += f"💰 Nykyinen arvo: €{total_value:,.2f}\n"
         for target in total_goals:
             if total_value >= target:
@@ -829,6 +765,29 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 months, date = calculate_goal(total_value, total_savings, target=target)
                 msg += f"   🥅 *{target:,.0f} €*: {date.strftime('%d.%m.%Y')} ({months} kk), puuttuu €{target - total_value:,.2f}\n"
+        msg += "\n━━━━━━━━━━━━━━━━━\n\n"
+
+        # 4) PERHEENJÄSENTEN TAVOITTEET (10k, 20k, 50k, 100k)
+        msg += "👨‍👩‍👧‍👦 *Perheenjäsenten tavoitteet*\n"
+        msg += "(ilman kuukausisäästöä, 7% vuosituotto)\n\n"
+        family_goals = [10000, 20000, 50000, 100000]
+
+        for member in FAMILY_HOLDINGS:
+            if member["name"].lower() == "aydaruus":
+                continue  # Aydaruus jo yllä
+            name = member["name"]
+            value = member["value"]
+            msg += f"📌 *{name}* — €{value:,.2f}\n"
+            for target in family_goals:
+                if value >= target:
+                    msg += f"   ✅ *{target:,.0f} €* — saavutettu!\n"
+                else:
+                    months, date = calculate_goal(value, 0, target=target)
+                    if months < 600:
+                        msg += f"   🥅 *{target:,.0f} €*: {date.strftime('%d.%m.%Y')} ({months} kk), puuttuu €{target - value:,.2f}\n"
+                    else:
+                        msg += f"   🥅 *{target:,.0f} €*: ei saavuteta 50 v sisällä\n"
+            msg += "\n"
 
         await update.message.reply_text(msg, parse_mode="Markdown")
     except Exception as e:
@@ -836,7 +795,7 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /goal: {str(e)[:200]}")
 
 # =============================================
-# 16. OSINGOT — PERHEENJÄSENILLE
+# 15. DIVIDENDS — KAIKKI PERHEENJÄSENET
 # =============================================
 FI_MONTHS = {
     "01": "Tammikuu", "02": "Helmikuu", "03": "Maaliskuu", "04": "Huhtikuu",
@@ -845,7 +804,6 @@ FI_MONTHS = {
 }
 
 def _build_dividend_message(owner, projected, monthly, yearly_total, current_year):
-    """Rakentaa osinkovietsin yhdelle omistajalle."""
     by_month = {}
     for div in projected:
         key = div['date_sort'].strftime('%m/%Y')
@@ -872,28 +830,7 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_year = datetime.now().year
         max_len = 3500
 
-        # Jos argumentti annetaan, näytetään vain se
-        if context.args:
-            owner = context.args[0].lower()
-            if owner not in FAMILY_OWNERSHIPS:
-                await update.message.reply_text(
-                    f"⚠️ Omistajaa '{owner}' ei löydy. Käytettävissä: {', '.join(FAMILY_OWNERSHIPS.keys())}\n"
-                    "Esimerkki: /dividends ismahaan"
-                )
-                return
-
-            projected, monthly, yearly_total = get_upcoming_dividends_estimated(owner=owner)
-            if not projected:
-                await update.message.reply_text(
-                    f"⚠️ Osinkoja ei voitu arvioida henkilölle {owner}."
-                )
-                return
-
-            msg = _build_dividend_message(owner, projected, monthly, yearly_total, current_year)
-            await update.message.reply_text(msg, parse_mode="Markdown")
-            return
-
-        # --- EI ARGUMENTTIA: näytä KAIKKI perheenjäsenet ---
+        # Näytä KAIKKI perheenjäsenet (ei parametria)
         all_messages = []
         for owner in FAMILY_OWNERSHIPS.keys():
             projected, monthly, yearly_total = get_upcoming_dividends_estimated(owner=owner)
@@ -909,7 +846,6 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Lähetä viestit (jaetaan tarvittaessa)
         for msg in all_messages:
             if len(msg) > max_len:
                 parts = [msg[i:i+max_len] for i in range(0, len(msg), max_len)]
@@ -923,16 +859,14 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /dividends: {str(e)[:200]}")
 
 # =============================================
-# 17. SUOSITUKSET (BUY/HOLD/SELL) — NOPEUTETTU
+# 16. RECOMMEND
 # =============================================
-
 async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         msg = "📊 *Sijoitusanalyysi & suositukset*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━━━\n"
         msg += "⚡ 30 päivän hinnanmuutokseen perustuen:\n\n"
 
-        # 1) Kryptot (haetaan yksitellen)
         msg += "🪙 *Kryptot*\n"
         crypto_symbols = {
             "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana",
@@ -949,7 +883,6 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg += f"❌ {name}: Ei hintaa\n"
         msg += "\n"
 
-        # 2) ETF:t ja osakkeet yhdellä yf.download()-kutsulla
         etf_symbols = [etf["symbol"] for etf in ETF_HOLDINGS]
         stock_symbols = [stock["symbol"] for stock in STOCK_HOLDINGS]
         all_symbols = etf_symbols + stock_symbols
@@ -1001,6 +934,18 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /recommend: {str(e)[:200]}")
 
 # =============================================
+# 17. TESTREPORT — Testaa aamuraportti manuaalisesti
+# =============================================
+async def testreport(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        await update.message.reply_text("📊 *Testataan aamuraporttia...*", parse_mode="Markdown")
+        await send_daily_report()
+        await update.message.reply_text("✅ *Aamuraportti lähetetty!*", parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Virhe /testreport: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /testreport: {str(e)[:200]}")
+
+# =============================================
 # 18. VIRHEIDENKÄSITTELY
 # =============================================
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1044,6 +989,7 @@ def run_bot():
     app.add_handler(CommandHandler("goal", goal))
     app.add_handler(CommandHandler("dividends", dividends))
     app.add_handler(CommandHandler("recommend", recommend))
+    app.add_handler(CommandHandler("testreport", testreport))
     app.add_error_handler(error_handler)
     app.run_polling()
 
