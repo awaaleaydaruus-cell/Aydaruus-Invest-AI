@@ -578,7 +578,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/testapi - Tijaabi API-yada\n"
             "/news - Uutiset omistuksista\n"
             "/goal - Tavoitteet (Trading212, krypto ja yhteensä)\n"
-            "/dividends [nimi] - Tulevat osingot (oletus Aydaruus, esim. /dividends ismahaan)\n"
+            "/dividends - Näytä kaikkien perheenjäsenten osingot eriteltynä\n"
+            "/dividends [nimi] - Näytä vain yhden henkilön osingot (esim. /dividends ismahaan)\n"
             "/recommend - Sijoitusanalyysi & suositukset\n\n"
             "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin!",
             parse_mode="Markdown"
@@ -610,7 +611,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/testapi - Tijaabi API-yada\n"
             "/news - Uutiset omistuksista\n"
             "/goal - Tavoitteet (Trading212, krypto ja yhteensä)\n"
-            "/dividends [nimi] - Tulevat osingot (oletus Aydaruus, esim. /dividends ismahaan)\n"
+            "/dividends - Näytä kaikkien perheenjäsenten osingot eriteltynä\n"
+            "/dividends [nimi] - Näytä vain yhden henkilön osingot (esim. /dividends ismahaan)\n"
             "/recommend - Sijoitusanalyysi & suositukset\n\n"
             "💰 *DCA:* €100/bil (crypto) + €450/kk (Trading 212)\n"
             "📊 *Warbixin maalinle:* 9:00 subax",
@@ -842,65 +844,79 @@ FI_MONTHS = {
     "09": "Syyskuu", "10": "Lokakuu", "11": "Marraskuu", "12": "Joulukuu",
 }
 
+def _build_dividend_message(owner, projected, monthly, yearly_total, current_year):
+    """Rakentaa osinkovietsin yhdelle omistajalle."""
+    by_month = {}
+    for div in projected:
+        key = div['date_sort'].strftime('%m/%Y')
+        by_month.setdefault(key, []).append(div)
+
+    months_sorted = sorted(by_month.keys(), key=lambda m: datetime.strptime(m, '%m/%Y'))
+
+    header = f"💰 *Dividends – {owner.capitalize()}*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    blocks = []
+    for key in months_sorted:
+        month_num, year = key.split('/')
+        month_name = FI_MONTHS.get(month_num, month_num)
+        month_total = monthly.get(key, 0.0)
+        block = f"📅 *{month_name} {year}* — €{month_total:,.2f}\n"
+        for div in by_month[key]:
+            block += f"   {div['date']}  •  {div['name']} ({div['symbol']})  →  €{div['amount']:,.2f}\n"
+        blocks.append(block)
+
+    footer = f"\n💰 *Yhteensä (vuoden {current_year} loppuun):* €{yearly_total:,.2f}"
+    return header + "\n".join(blocks) + footer
+
 async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # Tarkista, onko argumentti annettu
-        owner = "aydaruus"
+        current_year = datetime.now().year
+        max_len = 3500
+
+        # Jos argumentti annetaan, näytetään vain se
         if context.args:
             owner = context.args[0].lower()
+            if owner not in FAMILY_OWNERSHIPS:
+                await update.message.reply_text(
+                    f"⚠️ Omistajaa '{owner}' ei löydy. Käytettävissä: {', '.join(FAMILY_OWNERSHIPS.keys())}\n"
+                    "Esimerkki: /dividends ismahaan"
+                )
+                return
 
-        # Tarkista, onko omistaja FAMILY_OWNERSHIPS-sanakirjassa
-        if owner not in FAMILY_OWNERSHIPS:
-            await update.message.reply_text(
-                f"⚠️ Omistajaa '{owner}' ei löydy. Käytettävissä: {', '.join(FAMILY_OWNERSHIPS.keys())}\n"
-                "Esimerkki: /dividends ismahaan"
-            )
+            projected, monthly, yearly_total = get_upcoming_dividends_estimated(owner=owner)
+            if not projected:
+                await update.message.reply_text(
+                    f"⚠️ Osinkoja ei voitu arvioida henkilölle {owner}."
+                )
+                return
+
+            msg = _build_dividend_message(owner, projected, monthly, yearly_total, current_year)
+            await update.message.reply_text(msg, parse_mode="Markdown")
             return
 
-        current_year = datetime.now().year
-        projected, monthly, yearly_total = get_upcoming_dividends_estimated(owner=owner)
+        # --- EI ARGUMENTTIA: näytä KAIKKI perheenjäsenet ---
+        all_messages = []
+        for owner in FAMILY_OWNERSHIPS.keys():
+            projected, monthly, yearly_total = get_upcoming_dividends_estimated(owner=owner)
+            if not projected:
+                continue
+            msg = _build_dividend_message(owner, projected, monthly, yearly_total, current_year)
+            all_messages.append(msg)
 
-        if not projected:
+        if not all_messages:
             await update.message.reply_text(
-                f"⚠️ Osinkoja ei voitu arvioida henkilölle {owner}.\n"
+                "⚠️ Osinkoja ei voitu arvioida kenellekään perheenjäsenelle.\n"
                 "Varmista, että dividends.csv sisältää vähintään 2 maksua per osake/ETF."
             )
             return
 
-        by_month = {}
-        for div in projected:
-            key = div['date_sort'].strftime('%m/%Y')
-            by_month.setdefault(key, []).append(div)
-
-        months_sorted = sorted(by_month.keys(), key=lambda m: datetime.strptime(m, '%m/%Y'))
-
-        header = f"💰 *Dividends – {owner.capitalize()}*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        blocks = []
-        for key in months_sorted:
-            month_num, year = key.split('/')
-            month_name = FI_MONTHS.get(month_num, month_num)
-            month_total = monthly.get(key, 0.0)
-            block = f"📅 *{month_name} {year}* — €{month_total:,.2f}\n"
-            for div in by_month[key]:
-                block += f"   {div['date']}  •  {div['name']} ({div['symbol']})  →  €{div['amount']:,.2f}\n"
-            blocks.append(block)
-
-        footer = f"\n💰 *Yhteensä (vuoden {current_year} loppuun):* €{yearly_total:,.2f}"
-
-        max_len = 3500
-        current = header
-        messages = []
-        for block in blocks:
-            if len(current) + len(block) > max_len:
-                messages.append(current)
-                current = block
+        # Lähetä viestit (jaetaan tarvittaessa)
+        for msg in all_messages:
+            if len(msg) > max_len:
+                parts = [msg[i:i+max_len] for i in range(0, len(msg), max_len)]
+                for part in parts:
+                    await update.message.reply_text(part, parse_mode="Markdown")
             else:
-                current += block + "\n"
-        current += footer
-        messages.append(current)
-
-        for msg in messages:
-            await update.message.reply_text(msg, parse_mode="Markdown")
+                await update.message.reply_text(msg, parse_mode="Markdown")
 
     except Exception as e:
         logging.error(f"Virhe dividends-komennossa: {e}")
