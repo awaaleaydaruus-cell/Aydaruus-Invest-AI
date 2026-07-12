@@ -16,10 +16,10 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 
 # =============================================
-# Uudet riippuvuudet (pandas-ta korvaa vanhan ta-kirjaston)
+# Riippuvuudet (pandas-ta korvaa vanhan ta-kirjaston)
 # =============================================
 from bs4 import BeautifulSoup
-import pandas_ta as ta  # <--- TÄMÄ ON KORJATTU IMPORT
+import pandas_ta as ta
 import ccxt  # kryptopörssit (valinnainen)
 
 # =============================================
@@ -121,7 +121,7 @@ def get_all_user_ids():
     return [row[0] for row in rows]
 
 # =============================================
-# 4. PORTFOLIO HOLDINGS (sama kuin aiemmin)
+# 4. PORTFOLIO HOLDINGS
 # =============================================
 ETF_HOLDINGS = [
     {"isin": "IE00B5BMR087", "symbol": "SPY5L.L",  "name": "iShares Core S&P 500 UCITS ETF",                      "quantity": 1.3195215,   "price": 711.48},
@@ -217,7 +217,7 @@ TOTAL_INVESTMENTS = 33253.64
 TOTAL_CRYPTO = sum(c["value_eur"] for c in CRYPTO_HOLDINGS)
 
 # =============================================
-# 4B. HORMUUD SHARES — TÄYSIN ERILLÄÄN (sama)
+# 4B. HORMUUD SHARES
 # =============================================
 HORMUUD_PROJECTION = [
     {"nro": 0,  "year": 2024, "start_capital": 10000, "annual_return": None,  "cash_payment": None,  "monthly_payment": None, "capital_addition": None, "capital_growth": None,  "value": 0,      "paid_date": None,      "note": "Aloitus vuosi"},
@@ -259,7 +259,7 @@ FI_MONTHS = {
 }
 
 # =============================================
-# 5. PERHEENJÄSENTEN OMISTUKSET (sama)
+# 5. PERHEENJÄSENTEN OMISTUKSET
 # =============================================
 def generate_family_ownerships():
     aydaruus_value = TRADING212_PLAN["total_value"]
@@ -280,7 +280,7 @@ def generate_family_ownerships():
 FAMILY_OWNERSHIPS = generate_family_ownerships()
 
 # =============================================
-# 6. HINTA-APIT (sama)
+# 6. HINTA-APIT
 # =============================================
 def get_crypto_price(symbol):
     symbol_map = {
@@ -348,7 +348,7 @@ def get_etf_price(symbol):
     return get_stock_price(symbol)
 
 # =============================================
-# 7. HISTORIALLISET HINNAT (sama)
+# 7. HISTORIALLISET HINNAT
 # =============================================
 def get_crypto_historical(symbol, days=30):
     try:
@@ -375,7 +375,7 @@ def get_recommendation(current_price, old_price, name):
         return "🟡 HOLD", f"{change:+.1f}% (neutraali)"
 
 # =============================================
-# 8. SEURAAVA DCA-PÄIVÄ (sama)
+# 8. SEURAAVA DCA-PÄIVÄ
 # =============================================
 def get_next_trade_date(day=10, today=None):
     today = today or datetime.now()
@@ -386,7 +386,7 @@ def get_next_trade_date(day=10, today=None):
     return datetime(year, month, day)
 
 # =============================================
-# 9. OSINGOT — LUE CSV:STÄ (sama)
+# 9. OSINGOT
 # =============================================
 DIVIDENDS_CSV_PATH = "dividends.csv"
 
@@ -526,7 +526,7 @@ def build_dividend_report_text(owner_label="Aydaruus", owner_key="aydaruus", tod
     return msg
 
 # =============================================
-# 10. TAVOITELASKENTA (sama)
+# 10. TAVOITELASKENTA
 # =============================================
 def calculate_goal(current_value, monthly_savings, target=100000, yearly_return_pct=0.07):
     remaining = target - current_value
@@ -553,7 +553,7 @@ def calculate_compounding_crossover(current_value, monthly_savings, yearly_retur
     return None, None, None
 
 # =============================================
-# 11. KASVUTILASTOT (sama)
+# 11. KASVUTILASTOT
 # =============================================
 def save_portfolio_snapshot(total_value, crypto_value, invest_value, today=None):
     today = today or datetime.now()
@@ -636,7 +636,7 @@ def build_growth_report_text(current_total):
     return msg
 
 # =============================================
-# 12. UUTISET — KAIKISTA OMISTUKSISTA (sama)
+# 12. UUTISET
 # =============================================
 def build_owned_news_queries():
     queries = []
@@ -707,7 +707,7 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /news: {str(e)[:200]}")
 
 # =============================================
-# 13. VIESTIN PILKKOMINEN (sama)
+# 13. VIESTIN PILKKOMINEN
 # =============================================
 async def send_long_message(bot, chat_id, text, max_len=3500):
     if len(text) <= max_len:
@@ -718,7 +718,7 @@ async def send_long_message(bot, chat_id, text, max_len=3500):
         await bot.send_message(chat_id=chat_id, text=part, parse_mode="Markdown")
 
 # =============================================
-# 14. AAMURAPORTTI — KAIKKI AGENTIT (laajennettu)
+# 14. AAMURAPORTTI
 # =============================================
 async def send_daily_report():
     try:
@@ -727,7 +727,6 @@ async def send_daily_report():
             logging.info("Ei käyttäjiä, jätetään raportti lähettämättä.")
             return
 
-        # --- Portfolio ---
         btc = get_btc_price()
         eth = get_eth_price()
         sol = get_sol_price()
@@ -772,13 +771,8 @@ async def send_daily_report():
         dividend_msg = build_dividend_report_text(owner_label="Aydaruus", owner_key="aydaruus", today=today)
         news_messages = build_owned_news_messages()
 
-        # ===== UUSI: Crypto AI - Fear & Greed =====
         crypto_ai_msg = build_crypto_ai_report()
-
-        # ===== UUSI: Market Intelligence =====
         market_msg = build_market_intelligence_report()
-
-        # ===== UUSI: Presale Hunter - top 3 =====
         presale_msg = build_presale_report(limit=3)
 
         app = Application.builder().token(TOKEN).build()
@@ -802,17 +796,16 @@ def send_daily_report_sync():
     asyncio.run(send_daily_report())
 
 # =============================================
-# 15. AJOITUS — KLO 9:00 JOKA AAMU (sama)
+# 15. AJOITUS
 # =============================================
 scheduler = BackgroundScheduler()
 scheduler.add_job(send_daily_report_sync, 'cron', hour=9, minute=0, id="daily_report", replace_existing=True)
 scheduler.start()
 
 # =============================================
-# ===== UUSI: CRYPTO AI -AGENTTI =====
+# CRYPTO AI -AGENTTI
 # =============================================
 def get_fear_greed():
-    """Hakee Fear & Greed -indeksin alternative.me:stä."""
     try:
         url = "https://api.alternative.me/fng/?limit=1"
         r = requests.get(url, timeout=10)
@@ -825,9 +818,7 @@ def get_fear_greed():
     return None, None
 
 def get_crypto_ta(symbol, days=30):
-    """Laskee RSI ja MACD yhden krypton EUR-hinnoista käyttäen pandas_ta:ta."""
     try:
-        # Haetaan historialliset hinnat CoinGeckosta
         url = f"https://api.coingecko.com/api/v3/coins/{symbol}/market_chart?vs_currency=eur&days={days}"
         headers = {"User-Agent": "Mozilla/5.0"}
         r = requests.get(url, timeout=10, headers=headers)
@@ -837,22 +828,10 @@ def get_crypto_ta(symbol, days=30):
             if len(prices) < 20:
                 return None, None
             df = pd.DataFrame(prices, columns=["close"])
-            
-            # Lasketaan RSI pandas_ta-funktiolla
             rsi_series = ta.rsi(df["close"], length=14)
-            if rsi_series is not None and not rsi_series.empty:
-                rsi_val = rsi_series.iloc[-1]
-            else:
-                rsi_val = None
-            
-            # Lasketaan MACD pandas_ta-funktiolla
+            rsi_val = rsi_series.iloc[-1] if rsi_series is not None and not rsi_series.empty else None
             macd_df = ta.macd(df["close"], fast=12, slow=26, signal=9)
-            if macd_df is not None and not macd_df.empty:
-                # MACD-linja on sarakkeessa 'MACD_12_26_9'
-                macd_val = macd_df['MACD_12_26_9'].iloc[-1]
-            else:
-                macd_val = None
-            
+            macd_val = macd_df['MACD_12_26_9'].iloc[-1] if macd_df is not None and not macd_df.empty else None
             if rsi_val is not None and macd_val is not None:
                 return round(rsi_val, 2), round(macd_val, 2)
             return None, None
@@ -861,8 +840,6 @@ def get_crypto_ta(symbol, days=30):
     return None, None
 
 def get_whale_transactions(limit=5):
-    """Hakee viimeisimmät suuret BTC-siirrot (mocked, oikea toteutus vaatii API-avaimen)."""
-    # Tässä esimerkki: käytetään Blockchain.com:n julkista API:a ilman avainta (rajoitettu)
     try:
         url = "https://blockchain.info/unconfirmed-transactions?format=json"
         r = requests.get(url, timeout=10)
@@ -872,7 +849,7 @@ def get_whale_transactions(limit=5):
             whales = []
             for tx in txs:
                 total_btc = sum(out["value"] for out in tx["out"]) / 1e8
-                if total_btc > 100:  # yli 100 BTC
+                if total_btc > 100:
                     whales.append({
                         "hash": tx["hash"][:16],
                         "btc": round(total_btc, 2),
@@ -884,17 +861,13 @@ def get_whale_transactions(limit=5):
     return []
 
 def build_crypto_ai_report():
-    """Kokoaa Crypto AI -raportin: hinnat, Fear&Greed, RSI/MACD, whale alerts."""
     msg = "🪙 *Crypto AI -analyysi*\n━━━━━━━━━━━━━━━━━\n\n"
-
-    # Fear & Greed
     fg_val, fg_label = get_fear_greed()
     if fg_val is not None:
         msg += f"😨 *Fear & Greed:* {fg_val}/100 → {fg_label}\n\n"
     else:
         msg += "😨 Fear & Greed: ei saatavilla\n\n"
 
-    # Tekninen analyysi (BTC, ETH, SOL, XRP)
     symbols = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "XRP": "ripple"}
     for name, sym in symbols.items():
         price = get_crypto_price(sym)
@@ -904,7 +877,6 @@ def build_crypto_ai_report():
             msg += f" | RSI: {rsi} | MACD: {macd:.2f}"
         msg += "\n"
 
-    # Whale Alert
     whales = get_whale_transactions(3)
     if whales:
         msg += "\n🐋 *Viimeisimmät suuret BTC-siirrot (>100 BTC):*\n"
@@ -912,14 +884,12 @@ def build_crypto_ai_report():
             msg += f"• {w['time']}  {w['btc']} BTC  (hash: {w['hash']}...)\n"
     else:
         msg += "\n🐋 Ei suuria siirtoja havaittu (tai API-rajoitus).\n"
-
     return msg
 
 # =============================================
-# ===== UUSI: PRESALE HUNTER -AGENTTI =====
+# PRESALE HUNTER -AGENTTI
 # =============================================
 def fetch_presales():
-    """Hakee uusimmat presale-projektit CoinMarketCapin ICO-kalenterista (esimerkki)."""
     projects = []
     try:
         url = "https://coinmarketcap.com/ico-calendar/"
@@ -927,7 +897,6 @@ def fetch_presales():
         r = requests.get(url, timeout=15, headers=headers)
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, 'html.parser')
-            # Etsitään projektikortit – tämä on esimerkki, CMC:n rakenne voi muuttua
             items = soup.select('div.cmc-ico-calendar__item')[:10]
             for item in items:
                 name_elem = item.select_one('div.cmc-ico-calendar__name')
@@ -940,10 +909,8 @@ def fetch_presales():
                 launch_date = date_elem.text.strip() if date_elem else "TBA"
                 url_elem = item.select_one('a')
                 project_url = url_elem['href'] if url_elem else ""
-                # Arvioidaan pisteet (mock)
                 score = np.random.randint(70, 99)
                 scam_risk = np.random.randint(1, 15)
-                # Tallennetaan
                 projects.append({
                     "name": name,
                     "symbol": symbol,
@@ -1004,7 +971,6 @@ def get_top_presales(limit=5):
     return rows
 
 def build_presale_report(limit=5):
-    """Rakentaa raportin parhaista presale-projekteista."""
     rows = get_top_presales(limit)
     if not rows:
         return "🚀 *Presale Hunter*: Ei uusia projekteja tällä hetkellä."
@@ -1023,12 +989,9 @@ def build_presale_report(limit=5):
     return msg
 
 # =============================================
-# ===== UUSI: SCAM DETECTOR =====
+# SCAM DETECTOR
 # =============================================
 def check_scam(project_name):
-    """Tarkistaa projektin huijausriskin (mock, oikea toteutus vaatii kolmannen osapuolen API:a)."""
-    # Tässä vain simuloitu, koska oikea tarkistus vaatii erillisiä palveluita.
-    # Palautetaan satunnaiset arvot opastusta varten.
     import random
     risk = random.randint(1, 100)
     details = {
@@ -1069,7 +1032,7 @@ async def scam_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /scam: {str(e)[:200]}")
 
 # =============================================
-# ===== UUSI: LISTING PREDICTOR =====
+# LISTING PREDICTOR
 # =============================================
 async def listing_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -1078,7 +1041,6 @@ async def listing_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Anna projektin nimi: /listing <nimi>")
             return
         project = " ".join(args)
-        # Haetaan tietokannasta jos löytyy, muuten mock
         conn = sqlite3.connect("users.db")
         c = conn.cursor()
         c.execute("""
@@ -1092,7 +1054,6 @@ async def listing_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if row:
             binance, coinbase, kraken, bybit, okx = row
         else:
-            # Mock
             import random
             binance = random.randint(30, 90)
             coinbase = random.randint(20, 80)
@@ -1111,11 +1072,9 @@ async def listing_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /listing: {str(e)[:200]}")
 
 # =============================================
-# ===== UUSI: MARKET INTELLIGENCE -AGENTTI =====
+# MARKET INTELLIGENCE
 # =============================================
 def get_fed_rate():
-    """Hakee Fedin koron (mock, oikea API vaatii FRED-avaimen)."""
-    # Tässä esimerkki: käytetään yfinanceä 10-vuoden valtion obligaatioon
     try:
         ticker = yf.Ticker("^TNX")
         hist = ticker.history(period="1d")
@@ -1126,18 +1085,14 @@ def get_fed_rate():
     return None
 
 def get_inflation():
-    """Hakee inflaation (mock)."""
     try:
-        # Käytetään Eurostatia tai FRED:ää, tässä mock
-        return 2.4  # esim. helmikuu 2025
+        return 2.4
     except:
         return None
 
 def get_etf_flows():
-    """Hakee Bitcoin ETF -virrat (mock)."""
-    # Oikea data esim. BitMEX Research, tässä mock
     return {
-        "btc_etf_flow": 120.5,  # miljoonaa USD
+        "btc_etf_flow": 120.5,
         "eth_etf_flow": 45.3,
         "total_etf_flow": 165.8,
         "stablecoin_inflow": 500,
@@ -1164,7 +1119,6 @@ def build_market_intelligence_report():
     msg += f"   Stablecoin sisään: ${flows['stablecoin_inflow']:.0f}M\n"
     msg += f"   Stablecoin ulos: ${flows['stablecoin_outflow']:.0f}M\n"
 
-    # Trendiarvio (mock)
     if flows['total_etf_flow'] > 100 and flows['stablecoin_inflow'] > 300:
         msg += "\n📢 *Markkina: BULLISH* – suositus: DCA normaalisti\n"
     else:
@@ -1172,152 +1126,266 @@ def build_market_intelligence_report():
     return msg
 
 # =============================================
-# ===== UUSI: ALTCOIN-ANALYYSI =====
+# KOMENTOJEN KÄSITTELIJÄT
 # =============================================
-async def altcoins(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        alt_list = ["solana", "ripple", "cardano", "sui", "chainlink", "binancecoin", "stellar"]
-        msg = "🪙 *Altcoin-analyysi*\n━━━━━━━━━━━━━━━━━\n\n"
-        for sym in alt_list:
-            price = get_crypto_price(sym)
-            rsi, macd = get_crypto_ta(sym)
-            msg += f"*{sym.upper()}*: €{price:,.2f}" if price else f"*{sym.upper()}*: Ei hintaa"
-            if rsi is not None:
-                msg += f" | RSI: {rsi} | MACD: {macd:.2f}"
-            msg += "\n"
-        await update.message.reply_text(msg, parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Virhe /altcoins: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /altcoins: {str(e)[:200]}")
 
-# =============================================
-# ===== UUSI: FEAR COMMAND =====
-# =============================================
-async def fear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        val, label = get_fear_greed()
-        if val is not None:
-            await update.message.reply_text(f"😨 *Fear & Greed -indeksi*\n━━━━━━━━━━━━━━━━━\n\n{val}/100 → {label}", parse_mode="Markdown")
-        else:
-            await update.message.reply_text("⚠️ Fear & Greed -dataa ei saatu.")
+        user = update.effective_user
+        try:
+            conn = sqlite3.connect("users.db")
+            c = conn.cursor()
+            c.execute("INSERT OR REPLACE INTO users (id, username, first_name, last_seen) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                      (user.id, user.username, user.first_name))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logging.error(f"DB error: {e}")
+        await update.message.reply_text(
+            f"👋 *Hello, {user.first_name}!*\n\n"
+            "📊 *Aydaruus Invest AI 2.0* waa diyaar!\n\n"
+            "📌 *Komenno:*\n"
+            "/help - Muuji dhammaan komenno\n"
+            "/check - Soo dir warbixin degdeg ah\n"
+            "/portfolio - Muuji portfolio-gaaga\n"
+            "/etfs - Muuji ETF holdings\n"
+            "/stocks - Muuji stock holdings\n"
+            "/crypto - Muuji crypto holdings\n"
+            "/testapi - Tijaabi API-yada\n"
+            "/news - Uutiset kaikista omistuksistasi\n"
+            "/goal - Tavoitteet (Trading212, krypto ja perhe)\n"
+            "/dividends - Osingot: viikko, kuukausi ja kaikki perheenjäsenet\n"
+            "/growth - Salkun kasvu (tuotto & pääoma)\n"
+            "/hormuud - Hormuud-osakkeet ($, erillään Trading212:sta)\n"
+            "/recommend - Sijoitusanalyysi & suositukset\n"
+            "/testreport - Testaa aamuraportti (manuaalinen)\n\n"
+            "🆕 *Uudet komennot (AI 2.0):*\n"
+            "/presale - Uusimmat presale-projektit\n"
+            "/scam <nimi> - Tarkista projektin huijausriski\n"
+            "/market - Makrotalous ja ETF-virrat\n"
+            "/altcoins - Altcoinien tekninen analyysi\n"
+            "/listing <nimi> - Listautumisennuste\n"
+            "/ai - Tekoälysektorin uutiset\n"
+            "/watchlist - Oma seurantalista\n"
+            "/favorites - Sama kuin watchlist\n"
+            "/whales - Suuret kryptosiirrot\n"
+            "/fear - Fear & Greed -indeksi\n"
+            "/report - Koko päivän raportti\n\n"
+            "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin — "
+            "oo waxaa ku jira osingot, uutiset iyo kasvu, si otomaatig ah, "
+            "ma aha inaad wax weydiiso.",
+            parse_mode="Markdown"
+        )
     except Exception as e:
-        logging.error(f"Virhe /fear: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /fear: {str(e)[:200]}")
+        logging.error(f"Virhe /start: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /start: {str(e)[:200]}")
 
-# =============================================
-# ===== UUSI: WHALES COMMAND =====
-# =============================================
-async def whales_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        whales = get_whale_transactions(5)
-        if whales:
-            msg = "🐋 *Viimeisimmät suuret BTC-siirrot*\n━━━━━━━━━━━━━━━━━\n\n"
-            for w in whales:
-                msg += f"• {w['time']}  {w['btc']} BTC (hash: {w['hash']}...)\n"
-            await update.message.reply_text(msg, parse_mode="Markdown")
-        else:
-            await update.message.reply_text("🐋 Ei suuria siirtoja havaittu.")
+        await update.message.reply_text(
+            "🤖 *Käytettävissä olevat komennot:*\n\n"
+            "/start - Tervehdys\n"
+            "/ping - Ping Pong\n"
+            "/help - Tämä ohje\n"
+            "/stats - Näytä käyttäjämäärä\n"
+            "/check - Warbixin degdeg ah (crypto)\n"
+            "/portfolio - Muuji portfolio-gaaga\n"
+            "/etfs - Muuji ETF holdings\n"
+            "/stocks - Muuji stock holdings\n"
+            "/crypto - Muuji crypto holdings\n"
+            "/testapi - Tijaabi API-yada\n"
+            "/news - Uutiset kaikista omistuksistasi\n"
+            "/goal - Tavoitteet (Trading212, krypto ja perhe)\n"
+            "/dividends - Osingot: viikko, kuukausi ja kaikki perheenjäsenet\n"
+            "/growth - Salkun kasvu (tuotto & pääoma)\n"
+            "/hormuud - Hormuud-osakkeet ($, erillään Trading212:sta)\n"
+            "/recommend - Sijoitusanalyysi & suositukset\n"
+            "/testreport - Testaa aamuraportti (manuaalinen)\n\n"
+            "🆕 *AI 2.0 -uudet komennot:*\n"
+            "/presale - Uusimmat presale-projektit\n"
+            "/scam <nimi> - Tarkista projektin huijausriski\n"
+            "/market - Makrotalous ja ETF-virrat\n"
+            "/altcoins - Altcoinien tekninen analyysi\n"
+            "/listing <nimi> - Listautumisennuste\n"
+            "/ai - Tekoälysektorin uutiset\n"
+            "/watchlist - Oma seurantalista\n"
+            "/favorites - Sama kuin watchlist\n"
+            "/whales - Suuret kryptosiirrot\n"
+            "/fear - Fear & Greed -indeksi\n"
+            "/report - Koko päivän raportti\n\n"
+            "💰 *DCA:* €100/kk (crypto) + €200/kk (Aydaruus) + 5×50€/kk (perhe) = 550€/kk\n"
+            "📊 *Aamuraportti klo 9:00* sisältää AINA automaattisesti: "
+            "salkun tilanteen, kasvun, osingot, uutiset, Crypto AI:n, "
+            "Market Intelligencen ja Presale Hunterin — ilman että tarvitsee kysyä erikseen.",
+            parse_mode="Markdown"
+        )
     except Exception as e:
-        logging.error(f"Virhe /whales: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /whales: {str(e)[:200]}")
+        logging.error(f"Virhe /help: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /help: {str(e)[:200]}")
 
-# =============================================
-# ===== UUSI: PRESALE COMMAND =====
-# =============================================
-async def presale_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        await update.message.reply_text("🚀 *Haetaan uusimpia presale-projekteja...*", parse_mode="Markdown")
-        # Päivitetään tietokanta
-        projects = fetch_presales()
-        if projects:
-            save_presales(projects)
-        msg = build_presale_report(limit=5)
-        await update.message.reply_text(msg, parse_mode="Markdown")
+        await update.message.reply_text("🏓 Pong!")
     except Exception as e:
-        logging.error(f"Virhe /presale: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /presale: {str(e)[:200]}")
+        logging.error(f"Virhe /ping: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /ping: {str(e)[:200]}")
 
-# =============================================
-# ===== UUSI: MARKET COMMAND =====
-# =============================================
-async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        msg = build_market_intelligence_report()
-        await update.message.reply_text(msg, parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Virhe /market: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /market: {str(e)[:200]}")
-
-# =============================================
-# ===== UUSI: AI-SEKTORIN UUTISET =====
-# =============================================
-async def ai_news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        await update.message.reply_text("🧠 *Haetaan tekoälysektorin uutisia...*", parse_mode="Markdown")
-        query = "tekoäly sijoittaminen"
-        news = get_news(query, limit=5)
-        if news:
-            msg = "🧠 *AI-sektorin uutiset*\n━━━━━━━━━━━━━━━━━\n\n"
-            for item in news:
-                msg += f"• {item['title']}\n"
-            await update.message.reply_text(msg, parse_mode="Markdown")
-        else:
-            await update.message.reply_text("⚠️ Uutisia ei löytynyt.")
-    except Exception as e:
-        logging.error(f"Virhe /ai: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /ai: {str(e)[:200]}")
-
-# =============================================
-# ===== UUSI: WATCHLIST / FAVORITES =====
-# =============================================
-async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    args = context.args
-    if args and args[0].lower() == "add" and len(args) > 1:
-        project = " ".join(args[1:])
         conn = sqlite3.connect("users.db")
         c = conn.cursor()
-        c.execute("INSERT OR IGNORE INTO watchlist (user_id, project_name) VALUES (?, ?)", (user_id, project))
-        conn.commit()
+        c.execute("SELECT COUNT(*) FROM users")
+        count = c.fetchone()[0]
         conn.close()
-        await update.message.reply_text(f"✅ *{project}* lisätty watchlistiin.")
-    elif args and args[0].lower() == "remove" and len(args) > 1:
-        project = " ".join(args[1:])
-        conn = sqlite3.connect("users.db")
-        c = conn.cursor()
-        c.execute("DELETE FROM watchlist WHERE user_id = ? AND project_name = ?", (user_id, project))
-        conn.commit()
-        conn.close()
-        await update.message.reply_text(f"🗑️ *{project}* poistettu watchlistista.")
-    else:
-        conn = sqlite3.connect("users.db")
-        c = conn.cursor()
-        c.execute("SELECT project_name FROM watchlist WHERE user_id = ?", (user_id,))
-        rows = c.fetchall()
-        conn.close()
-        if rows:
-            msg = "📋 *Watchlist*\n━━━━━━━━━━━━━━━━━\n\n"
-            for r in rows:
-                msg += f"• {r[0]}\n"
-            await update.message.reply_text(msg, parse_mode="Markdown")
-        else:
-            await update.message.reply_text("📋 Watchlist on tyhjä. Lisää: /watchlist add <projekti>")
-
-# =============================================
-# ===== UUSI: REPORT (koko päivän) =====
-# =============================================
-async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        await update.message.reply_text("📊 *Koko päivän raportti kootaan...*", parse_mode="Markdown")
-        await send_daily_report()  # lähettää kaikille käyttäjille, mutta tässä vain kyseiselle
-        await update.message.reply_text("✅ Raportti lähetetty.")
+        await update.message.reply_text(f"👥 Botti waxaa isticmaalay {count} qof.")
     except Exception as e:
-        logging.error(f"Virhe /report: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /report: {str(e)[:200]}")
+        logging.error(f"Virhe /stats: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /stats: {str(e)[:200]}")
 
-# =============================================
-# 18. GOAL (sama)
-# =============================================
+async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        btc = get_btc_price(); eth = get_eth_price(); sol = get_sol_price()
+        xrp = get_xrp_price(); bnb = get_bnb_price(); sui = get_sui_price()
+        xlm = get_xlm_price(); ada = get_ada_price(); link = get_link_price()
+
+        msg = "📊 *Warbixin degdeg ah*\n━━━━━━━━━━━━━━━━━\n\n🪙 *Crypto qiimaha hadda:*\n"
+        for label, val in [("₿ BTC", btc), ("⟠ ETH", eth), ("◎ SOL", sol), ("✕ XRP", xrp),
+                            ("⬡ BNB", bnb), ("🔷 SUI", sui), ("⭐ XLM", xlm),
+                            ("🟣 ADA", ada), ("🔗 LINK", link)]:
+            msg += f"{label}: €{val:,.2f}\n" if val else f"{label}: Laga ma helin\n"
+
+        msg += f"\n💰 *Crypto holdings:* €{TOTAL_CRYPTO:,.2f}\n"
+        msg += f"💵 *Wadarta guud:* €{TOTAL_INVESTMENTS:,.2f}"
+
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Virhe /check: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /check: {str(e)[:200]}")
+
+async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        next_trade = get_next_trade_date(day=10)
+        msg = "📊 *Portfolio-gaaga*\n━━━━━━━━━━━━━━━━━\n\n"
+        msg += f"💰 *Wadarta guud (T212 Invest):* €{TOTAL_INVESTMENTS:,.2f}\n"
+        msg += f"🪙 *Crypto holdings (ulkoinen):* €{TOTAL_CRYPTO:,.2f}\n"
+        msg += f"💎 *Yhteensä:* €{TOTAL_INVESTMENTS + TOTAL_CRYPTO:,.2f}\n\n"
+        msg += f"📈 *ETF holdings:* {len(ETF_HOLDINGS)} holdings\n"
+        msg += f"📈 *Stock holdings:* {len(STOCK_HOLDINGS)} holdings\n"
+        msg += f"🪙 *Crypto holdings:* {len(CRYPTO_HOLDINGS)} holdings\n\n"
+
+        msg += f"📊 *Trading 212 -kuukausisijoitus (seuraava: {next_trade.strftime('%d.%m.%Y')}):*\n"
+        msg += f"💰 Aydaruus: €200/kk (10. päivä)\n"
+        for member in FAMILY_HOLDINGS:
+            if member["name"] != "Aydaruus":
+                msg += f"💰 {member['name']}: €{member['monthly_savings']}/kk (10. päivä)\n"
+        msg += f"💰 Yhteensä: €450/kk\n\n"
+
+        msg += "👨‍👩‍👧‍👦 *Perheen holdings*\n"
+        for member in FAMILY_HOLDINGS:
+            msg += f"• {member['name']}: {member['holdings']} hold. = €{member['value']:,.2f} (+€{member['profit']:,.2f} / +{member['profit_percent']:.2f}%)\n"
+
+        msg += f"\n📌 *DCA qorshaha:* {DCA_PLAN['name']}\n"
+        msg += f"💰 €{DCA_PLAN['amount_eur']}/kk (10-da bil, seuraava {next_trade.strftime('%d.%m.%Y')})\n"
+        msg += "📊 Qaybinta: BTC 20%, ETH 20%, BNB 20%, SOL 20%, XRP 20%"
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Virhe /portfolio: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /portfolio: {str(e)[:200]}")
+
+async def etfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        msg = "📈 *ETF Holdings*\n━━━━━━━━━━━━━━━━━\n\n"
+        total = 0
+        for etf in ETF_HOLDINGS:
+            value = etf["quantity"] * etf["price"]
+            total += value
+            msg += f"{etf['name'][:30]}: {etf['quantity']:.4f} x €{etf['price']:,.2f} = €{value:,.2f}\n"
+        msg += f"\n💰 *Wadarta ETF:* €{total:,.2f}"
+        await update.message.reply_text(msg)
+    except Exception as e:
+        logging.error(f"Virhe /etfs: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /etfs: {str(e)[:200]}")
+
+async def stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        msg = "📈 *Stock Holdings*\n━━━━━━━━━━━━━━━━━\n\n"
+        total = 0
+        for stock in STOCK_HOLDINGS:
+            value = stock["quantity"] * stock["price"]
+            total += value
+            msg += f"{stock['name'][:25]}: {stock['quantity']:.4f} x ${stock['price']:,.2f} = ${value:,.2f}\n"
+        msg += f"\n💰 *Wadarta Stocks:* ${total:,.2f}"
+        await update.message.reply_text(msg)
+    except Exception as e:
+        logging.error(f"Virhe /stocks: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /stocks: {str(e)[:200]}")
+
+async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        msg = "🪙 *Crypto Holdings*\n━━━━━━━━━━━━━━━━━\n\n"
+        total = 0
+        for c in CRYPTO_HOLDINGS:
+            total += c["value_eur"]
+            msg += f"{c['name']}: {c['quantity']:.8f} = €{c['value_eur']:,.2f}\n"
+        msg += f"\n💰 *Wadarta Crypto:* €{total:,.2f}"
+        await update.message.reply_text(msg)
+    except Exception as e:
+        logging.error(f"Virhe /crypto: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /crypto: {str(e)[:200]}")
+
+async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        msg = "🧪 *Tijaabo API (EUR)*\n\n"
+        try:
+            r = requests.get("https://api.kraken.com/0/public/Ticker?pair=BTCEUR", timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                if data.get("result"):
+                    for pair, values in data["result"].items():
+                        if "c" in values and len(values["c"]) > 0:
+                            msg += f"✅ Kraken BTC/EUR: {float(values['c'][0]):,.0f} €\n"
+                            break
+            else:
+                msg += f"❌ Kraken: {r.status_code}\n"
+        except Exception as e:
+            msg += f"❌ Kraken error: {e}\n"
+        try:
+            r = requests.get("https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=BTC-EUR", timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                if data.get("data") and "price" in data["data"]:
+                    msg += f"✅ KuCoin BTC/EUR: {float(data['data']['price']):,.0f} €\n"
+            else:
+                msg += f"❌ KuCoin: {r.status_code}\n"
+        except Exception as e:
+            msg += f"❌ KuCoin error: {e}\n"
+        try:
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            r = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur", timeout=10, headers=headers)
+            if r.status_code == 200:
+                data = r.json()
+                if "bitcoin" in data and "eur" in data["bitcoin"]:
+                    msg += f"✅ CoinGecko BTC/EUR: {data['bitcoin']['eur']:,.0f} €\n"
+            else:
+                msg += f"❌ CoinGecko: {r.status_code}\n"
+        except Exception as e:
+            msg += f"❌ CoinGecko error: {e}\n"
+        await update.message.reply_text(msg)
+    except Exception as e:
+        logging.error(f"Virhe /testapi: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /testapi: {str(e)[:200]}")
+
+# growth-komento (oli aiemmin puuttunut)
+async def growth(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        total_value = TOTAL_INVESTMENTS + TOTAL_CRYPTO
+        msg = build_growth_report_text(total_value)
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Virhe /growth: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /growth: {str(e)[:200]}")
+
+# goal-komento
 async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         msg = "🎯 *Sijoitustavoitteet*\n━━━━━━━━━━━━━━━━━\n\n"
@@ -1399,9 +1467,7 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Virhe /goal: {e}")
         await update.message.reply_text(f"⚠️ Virhe /goal: {str(e)[:200]}")
 
-# =============================================
-# 19. DIVIDENDS (sama)
-# =============================================
+# dividends-komento
 def _build_full_dividend_message(owner, projected, monthly, yearly_total, current_year):
     by_month = {}
     for div in projected:
@@ -1428,11 +1494,9 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         current_year = datetime.now().year
 
-        # Ensin nopea yhteenveto: tämä viikko + tämä kuukausi (Aydaruus)
         summary_msg = build_dividend_report_text(owner_label="Aydaruus", owner_key="aydaruus")
         await update.message.reply_text(summary_msg, parse_mode="Markdown")
 
-        # Sitten koko vuoden erittely kaikille perheenjäsenille
         all_messages = []
         for owner in FAMILY_OWNERSHIPS.keys():
             projected, monthly, yearly_total = get_upcoming_dividends_estimated(owner=owner)
@@ -1455,9 +1519,7 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Virhe dividends-komennossa: {e}")
         await update.message.reply_text(f"⚠️ Virhe /dividends: {str(e)[:200]}")
 
-# =============================================
-# 20. RECOMMEND (sama)
-# =============================================
+# recommend-komento
 async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         msg = "📊 *Sijoitusanalyysi & suositukset*\n"
@@ -1530,9 +1592,7 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Virhe /recommend: {e}")
         await update.message.reply_text(f"⚠️ Virhe /recommend: {str(e)[:200]}")
 
-# =============================================
-# 21. TESTREPORT (sama)
-# =============================================
+# testreport
 async def testreport(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_text("📊 *Testataan aamuraporttia...*", parse_mode="Markdown")
@@ -1542,9 +1602,7 @@ async def testreport(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Virhe /testreport: {e}")
         await update.message.reply_text(f"⚠️ Virhe /testreport: {str(e)[:200]}")
 
-# =============================================
-# 22. HORMUUD (sama)
-# =============================================
+# hormuud
 def get_hormuud_active_row(today=None):
     today = today or datetime.now()
     confirmed = []
@@ -1617,8 +1675,128 @@ async def hormuud(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Virhe /hormuud: {e}")
         await update.message.reply_text(f"⚠️ Virhe /hormuud: {str(e)[:200]}")
 
+# altcoins, fear, whales, presale, market, ai, watchlist, report -komennot
+async def altcoins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        alt_list = ["solana", "ripple", "cardano", "sui", "chainlink", "binancecoin", "stellar"]
+        msg = "🪙 *Altcoin-analyysi*\n━━━━━━━━━━━━━━━━━\n\n"
+        for sym in alt_list:
+            price = get_crypto_price(sym)
+            rsi, macd = get_crypto_ta(sym)
+            msg += f"*{sym.upper()}*: €{price:,.2f}" if price else f"*{sym.upper()}*: Ei hintaa"
+            if rsi is not None:
+                msg += f" | RSI: {rsi} | MACD: {macd:.2f}"
+            msg += "\n"
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Virhe /altcoins: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /altcoins: {str(e)[:200]}")
+
+async def fear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        val, label = get_fear_greed()
+        if val is not None:
+            await update.message.reply_text(f"😨 *Fear & Greed -indeksi*\n━━━━━━━━━━━━━━━━━\n\n{val}/100 → {label}", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("⚠️ Fear & Greed -dataa ei saatu.")
+    except Exception as e:
+        logging.error(f"Virhe /fear: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /fear: {str(e)[:200]}")
+
+async def whales_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        whales = get_whale_transactions(5)
+        if whales:
+            msg = "🐋 *Viimeisimmät suuret BTC-siirrot*\n━━━━━━━━━━━━━━━━━\n\n"
+            for w in whales:
+                msg += f"• {w['time']}  {w['btc']} BTC (hash: {w['hash']}...)\n"
+            await update.message.reply_text(msg, parse_mode="Markdown")
+        else:
+            await update.message.reply_text("🐋 Ei suuria siirtoja havaittu.")
+    except Exception as e:
+        logging.error(f"Virhe /whales: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /whales: {str(e)[:200]}")
+
+async def presale_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        await update.message.reply_text("🚀 *Haetaan uusimpia presale-projekteja...*", parse_mode="Markdown")
+        projects = fetch_presales()
+        if projects:
+            save_presales(projects)
+        msg = build_presale_report(limit=5)
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Virhe /presale: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /presale: {str(e)[:200]}")
+
+async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        msg = build_market_intelligence_report()
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Virhe /market: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /market: {str(e)[:200]}")
+
+async def ai_news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        await update.message.reply_text("🧠 *Haetaan tekoälysektorin uutisia...*", parse_mode="Markdown")
+        query = "tekoäly sijoittaminen"
+        news = get_news(query, limit=5)
+        if news:
+            msg = "🧠 *AI-sektorin uutiset*\n━━━━━━━━━━━━━━━━━\n\n"
+            for item in news:
+                msg += f"• {item['title']}\n"
+            await update.message.reply_text(msg, parse_mode="Markdown")
+        else:
+            await update.message.reply_text("⚠️ Uutisia ei löytynyt.")
+    except Exception as e:
+        logging.error(f"Virhe /ai: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /ai: {str(e)[:200]}")
+
+async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    args = context.args
+    if args and args[0].lower() == "add" and len(args) > 1:
+        project = " ".join(args[1:])
+        conn = sqlite3.connect("users.db")
+        c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO watchlist (user_id, project_name) VALUES (?, ?)", (user_id, project))
+        conn.commit()
+        conn.close()
+        await update.message.reply_text(f"✅ *{project}* lisätty watchlistiin.")
+    elif args and args[0].lower() == "remove" and len(args) > 1:
+        project = " ".join(args[1:])
+        conn = sqlite3.connect("users.db")
+        c = conn.cursor()
+        c.execute("DELETE FROM watchlist WHERE user_id = ? AND project_name = ?", (user_id, project))
+        conn.commit()
+        conn.close()
+        await update.message.reply_text(f"🗑️ *{project}* poistettu watchlistista.")
+    else:
+        conn = sqlite3.connect("users.db")
+        c = conn.cursor()
+        c.execute("SELECT project_name FROM watchlist WHERE user_id = ?", (user_id,))
+        rows = c.fetchall()
+        conn.close()
+        if rows:
+            msg = "📋 *Watchlist*\n━━━━━━━━━━━━━━━━━\n\n"
+            for r in rows:
+                msg += f"• {r[0]}\n"
+            await update.message.reply_text(msg, parse_mode="Markdown")
+        else:
+            await update.message.reply_text("📋 Watchlist on tyhjä. Lisää: /watchlist add <projekti>")
+
+async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        await update.message.reply_text("📊 *Koko päivän raportti kootaan...*", parse_mode="Markdown")
+        await send_daily_report()
+        await update.message.reply_text("✅ Raportti lähetetty.")
+    except Exception as e:
+        logging.error(f"Virhe /report: {e}")
+        await update.message.reply_text(f"⚠️ Virhe /report: {str(e)[:200]}")
+
 # =============================================
-# 23. VIRHEIDENKÄSITTELY (sama)
+# VIRHEIDENKÄSITTELY
 # =============================================
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.error(f"Virhe: {context.error}")
@@ -1631,107 +1809,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # =============================================
-# 24. START-KOMENTO (päivitetty)
-# =============================================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user = update.effective_user
-        try:
-            conn = sqlite3.connect("users.db")
-            c = conn.cursor()
-            c.execute("INSERT OR REPLACE INTO users (id, username, first_name, last_seen) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
-                      (user.id, user.username, user.first_name))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logging.error(f"DB error: {e}")
-        await update.message.reply_text(
-            f"👋 *Hello, {user.first_name}!*\n\n"
-            "📊 *Aydaruus Invest AI 2.0* waa diyaar!\n\n"
-            "📌 *Komenno:*\n"
-            "/help - Muuji dhammaan komenno\n"
-            "/check - Soo dir warbixin degdeg ah\n"
-            "/portfolio - Muuji portfolio-gaaga\n"
-            "/etfs - Muuji ETF holdings\n"
-            "/stocks - Muuji stock holdings\n"
-            "/crypto - Muuji crypto holdings\n"
-            "/testapi - Tijaabi API-yada\n"
-            "/news - Uutiset kaikista omistuksistasi\n"
-            "/goal - Tavoitteet (Trading212, krypto ja perhe)\n"
-            "/dividends - Osingot: viikko, kuukausi ja kaikki perheenjäsenet\n"
-            "/growth - Salkun kasvu (tuotto & pääoma)\n"
-            "/hormuud - Hormuud-osakkeet ($, erillään Trading212:sta)\n"
-            "/recommend - Sijoitusanalyysi & suositukset\n"
-            "/testreport - Testaa aamuraportti (manuaalinen)\n\n"
-            "🆕 *Uudet komennot (AI 2.0):*\n"
-            "/presale - Uusimmat presale-projektit\n"
-            "/scam <nimi> - Tarkista projektin huijausriski\n"
-            "/market - Makrotalous ja ETF-virrat\n"
-            "/altcoins - Altcoinien tekninen analyysi\n"
-            "/listing <nimi> - Listautumisennuste\n"
-            "/ai - Tekoälysektorin uutiset\n"
-            "/watchlist - Oma seurantalista\n"
-            "/favorites - Sama kuin watchlist\n"
-            "/whales - Suuret kryptosiirrot\n"
-            "/fear - Fear & Greed -indeksi\n"
-            "/report - Koko päivän raportti\n\n"
-            "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin — "
-            "oo waxaa ku jira osingot, uutiset iyo kasvu, si otomaatig ah, "
-            "ma aha inaad wax weydiiso.",
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        logging.error(f"Virhe /start: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /start: {str(e)[:200]}")
-
-# =============================================
-# 25. HELP-KOMENTO (päivitetty)
-# =============================================
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        await update.message.reply_text(
-            "🤖 *Käytettävissä olevat komennot:*\n\n"
-            "/start - Tervehdys\n"
-            "/ping - Ping Pong\n"
-            "/help - Tämä ohje\n"
-            "/stats - Näytä käyttäjämäärä\n"
-            "/check - Warbixin degdeg ah (crypto)\n"
-            "/portfolio - Muuji portfolio-gaaga\n"
-            "/etfs - Muuji ETF holdings\n"
-            "/stocks - Muuji stock holdings\n"
-            "/crypto - Muuji crypto holdings\n"
-            "/testapi - Tijaabi API-yada\n"
-            "/news - Uutiset kaikista omistuksistasi\n"
-            "/goal - Tavoitteet (Trading212, krypto ja perhe)\n"
-            "/dividends - Osingot: viikko, kuukausi ja kaikki perheenjäsenet\n"
-            "/growth - Salkun kasvu (tuotto & pääoma)\n"
-            "/hormuud - Hormuud-osakkeet ($, erillään Trading212:sta)\n"
-            "/recommend - Sijoitusanalyysi & suositukset\n"
-            "/testreport - Testaa aamuraportti (manuaalinen)\n\n"
-            "🆕 *AI 2.0 -uudet komennot:*\n"
-            "/presale - Uusimmat presale-projektit\n"
-            "/scam <nimi> - Tarkista projektin huijausriski\n"
-            "/market - Makrotalous ja ETF-virrat\n"
-            "/altcoins - Altcoinien tekninen analyysi\n"
-            "/listing <nimi> - Listautumisennuste\n"
-            "/ai - Tekoälysektorin uutiset\n"
-            "/watchlist - Oma seurantalista\n"
-            "/favorites - Sama kuin watchlist\n"
-            "/whales - Suuret kryptosiirrot\n"
-            "/fear - Fear & Greed -indeksi\n"
-            "/report - Koko päivän raportti\n\n"
-            "💰 *DCA:* €100/kk (crypto) + €200/kk (Aydaruus) + 5×50€/kk (perhe) = 550€/kk\n"
-            "📊 *Aamuraportti klo 9:00* sisältää AINA automaattisesti: "
-            "salkun tilanteen, kasvun, osingot, uutiset, Crypto AI:n, "
-            "Market Intelligencen ja Presale Hunterin — ilman että tarvitsee kysyä erikseen.",
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        logging.error(f"Virhe /help: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /help: {str(e)[:200]}")
-
-# =============================================
-# 26. FLASK (sama)
+# FLASK
 # =============================================
 flask_app = Flask(__name__)
 
@@ -1743,11 +1821,11 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=PORT, debug=False)
 
 # =============================================
-# 27. PÄÄFUNKTIO (päivitetty)
+# PÄÄFUNKTIO
 # =============================================
 def run_bot():
     app = Application.builder().token(TOKEN).build()
-    # Vanhat komennot
+    # Vanhat
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ping", ping))
     app.add_handler(CommandHandler("help", help_command))
@@ -1766,7 +1844,7 @@ def run_bot():
     app.add_handler(CommandHandler("recommend", recommend))
     app.add_handler(CommandHandler("testreport", testreport))
 
-    # Uudet komennot
+    # Uudet
     app.add_handler(CommandHandler("presale", presale_command))
     app.add_handler(CommandHandler("scam", scam_command))
     app.add_handler(CommandHandler("market", market_command))
@@ -1774,7 +1852,7 @@ def run_bot():
     app.add_handler(CommandHandler("listing", listing_command))
     app.add_handler(CommandHandler("ai", ai_news_command))
     app.add_handler(CommandHandler("watchlist", watchlist_command))
-    app.add_handler(CommandHandler("favorites", watchlist_command))  # sama kuin watchlist
+    app.add_handler(CommandHandler("favorites", watchlist_command))
     app.add_handler(CommandHandler("whales", whales_command))
     app.add_handler(CommandHandler("fear", fear_command))
     app.add_handler(CommandHandler("report", report_command))
@@ -1783,183 +1861,7 @@ def run_bot():
     app.run_polling()
 
 # =============================================
-# 28. PING-KOMENTO
-# =============================================
-async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        await update.message.reply_text("🏓 Pong!")
-    except Exception as e:
-        logging.error(f"Virhe /ping: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /ping: {str(e)[:200]}")
-
-# =============================================
-# 29. STATS-KOMENTO
-# =============================================
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        conn = sqlite3.connect("users.db")
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM users")
-        count = c.fetchone()[0]
-        conn.close()
-        await update.message.reply_text(f"👥 Botti waxaa isticmaalay {count} qof.")
-    except Exception as e:
-        logging.error(f"Virhe /stats: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /stats: {str(e)[:200]}")
-
-# =============================================
-# 30. CHECK-KOMENTO
-# =============================================
-async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        btc = get_btc_price(); eth = get_eth_price(); sol = get_sol_price()
-        xrp = get_xrp_price(); bnb = get_bnb_price(); sui = get_sui_price()
-        xlm = get_xlm_price(); ada = get_ada_price(); link = get_link_price()
-
-        msg = "📊 *Warbixin degdeg ah*\n━━━━━━━━━━━━━━━━━\n\n🪙 *Crypto qiimaha hadda:*\n"
-        for label, val in [("₿ BTC", btc), ("⟠ ETH", eth), ("◎ SOL", sol), ("✕ XRP", xrp),
-                            ("⬡ BNB", bnb), ("🔷 SUI", sui), ("⭐ XLM", xlm),
-                            ("🟣 ADA", ada), ("🔗 LINK", link)]:
-            msg += f"{label}: €{val:,.2f}\n" if val else f"{label}: Laga ma helin\n"
-
-        msg += f"\n💰 *Crypto holdings:* €{TOTAL_CRYPTO:,.2f}\n"
-        msg += f"💵 *Wadarta guud:* €{TOTAL_INVESTMENTS:,.2f}"
-
-        await update.message.reply_text(msg, parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Virhe /check: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /check: {str(e)[:200]}")
-
-# =============================================
-# 31. PORTFOLIO-KOMENTO
-# =============================================
-async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        next_trade = get_next_trade_date(day=10)
-        msg = "📊 *Portfolio-gaaga*\n━━━━━━━━━━━━━━━━━\n\n"
-        msg += f"💰 *Wadarta guud (T212 Invest):* €{TOTAL_INVESTMENTS:,.2f}\n"
-        msg += f"🪙 *Crypto holdings (ulkoinen):* €{TOTAL_CRYPTO:,.2f}\n"
-        msg += f"💎 *Yhteensä:* €{TOTAL_INVESTMENTS + TOTAL_CRYPTO:,.2f}\n\n"
-        msg += f"📈 *ETF holdings:* {len(ETF_HOLDINGS)} holdings\n"
-        msg += f"📈 *Stock holdings:* {len(STOCK_HOLDINGS)} holdings\n"
-        msg += f"🪙 *Crypto holdings:* {len(CRYPTO_HOLDINGS)} holdings\n\n"
-
-        msg += f"📊 *Trading 212 -kuukausisijoitus (seuraava: {next_trade.strftime('%d.%m.%Y')}):*\n"
-        msg += f"💰 Aydaruus: €200/kk (10. päivä)\n"
-        for member in FAMILY_HOLDINGS:
-            if member["name"] != "Aydaruus":
-                msg += f"💰 {member['name']}: €{member['monthly_savings']}/kk (10. päivä)\n"
-        msg += f"💰 Yhteensä: €450/kk\n\n"
-
-        msg += "👨‍👩‍👧‍👦 *Perheen holdings*\n"
-        for member in FAMILY_HOLDINGS:
-            msg += f"• {member['name']}: {member['holdings']} hold. = €{member['value']:,.2f} (+€{member['profit']:,.2f} / +{member['profit_percent']:.2f}%)\n"
-
-        msg += f"\n📌 *DCA qorshaha:* {DCA_PLAN['name']}\n"
-        msg += f"💰 €{DCA_PLAN['amount_eur']}/kk (10-da bil, seuraava {next_trade.strftime('%d.%m.%Y')})\n"
-        msg += "📊 Qaybinta: BTC 20%, ETH 20%, BNB 20%, SOL 20%, XRP 20%"
-        await update.message.reply_text(msg, parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Virhe /portfolio: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /portfolio: {str(e)[:200]}")
-
-# =============================================
-# 32. ETFS-KOMENTO
-# =============================================
-async def etfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        msg = "📈 *ETF Holdings*\n━━━━━━━━━━━━━━━━━\n\n"
-        total = 0
-        for etf in ETF_HOLDINGS:
-            value = etf["quantity"] * etf["price"]
-            total += value
-            msg += f"{etf['name'][:30]}: {etf['quantity']:.4f} x €{etf['price']:,.2f} = €{value:,.2f}\n"
-        msg += f"\n💰 *Wadarta ETF:* €{total:,.2f}"
-        await update.message.reply_text(msg)
-    except Exception as e:
-        logging.error(f"Virhe /etfs: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /etfs: {str(e)[:200]}")
-
-# =============================================
-# 33. STOCKS-KOMENTO
-# =============================================
-async def stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        msg = "📈 *Stock Holdings*\n━━━━━━━━━━━━━━━━━\n\n"
-        total = 0
-        for stock in STOCK_HOLDINGS:
-            value = stock["quantity"] * stock["price"]
-            total += value
-            msg += f"{stock['name'][:25]}: {stock['quantity']:.4f} x ${stock['price']:,.2f} = ${value:,.2f}\n"
-        msg += f"\n💰 *Wadarta Stocks:* ${total:,.2f}"
-        await update.message.reply_text(msg)
-    except Exception as e:
-        logging.error(f"Virhe /stocks: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /stocks: {str(e)[:200]}")
-
-# =============================================
-# 34. CRYPTO-KOMENTO
-# =============================================
-async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        msg = "🪙 *Crypto Holdings*\n━━━━━━━━━━━━━━━━━\n\n"
-        total = 0
-        for c in CRYPTO_HOLDINGS:
-            total += c["value_eur"]
-            msg += f"{c['name']}: {c['quantity']:.8f} = €{c['value_eur']:,.2f}\n"
-        msg += f"\n💰 *Wadarta Crypto:* €{total:,.2f}"
-        await update.message.reply_text(msg)
-    except Exception as e:
-        logging.error(f"Virhe /crypto: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /crypto: {str(e)[:200]}")
-
-# =============================================
-# 35. TESTAPI-KOMENTO
-# =============================================
-async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        msg = "🧪 *Tijaabo API (EUR)*\n\n"
-        try:
-            r = requests.get("https://api.kraken.com/0/public/Ticker?pair=BTCEUR", timeout=10)
-            if r.status_code == 200:
-                data = r.json()
-                if data.get("result"):
-                    for pair, values in data["result"].items():
-                        if "c" in values and len(values["c"]) > 0:
-                            msg += f"✅ Kraken BTC/EUR: {float(values['c'][0]):,.0f} €\n"
-                            break
-            else:
-                msg += f"❌ Kraken: {r.status_code}\n"
-        except Exception as e:
-            msg += f"❌ Kraken error: {e}\n"
-        try:
-            r = requests.get("https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=BTC-EUR", timeout=10)
-            if r.status_code == 200:
-                data = r.json()
-                if data.get("data") and "price" in data["data"]:
-                    msg += f"✅ KuCoin BTC/EUR: {float(data['data']['price']):,.0f} €\n"
-            else:
-                msg += f"❌ KuCoin: {r.status_code}\n"
-        except Exception as e:
-            msg += f"❌ KuCoin error: {e}\n"
-        try:
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-            r = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur", timeout=10, headers=headers)
-            if r.status_code == 200:
-                data = r.json()
-                if "bitcoin" in data and "eur" in data["bitcoin"]:
-                    msg += f"✅ CoinGecko BTC/EUR: {data['bitcoin']['eur']:,.0f} €\n"
-            else:
-                msg += f"❌ CoinGecko: {r.status_code}\n"
-        except Exception as e:
-            msg += f"❌ CoinGecko error: {e}\n"
-        await update.message.reply_text(msg)
-    except Exception as e:
-        logging.error(f"Virhe /testapi: {e}")
-        await update.message.reply_text(f"⚠️ Virhe /testapi: {str(e)[:200]}")
-
-# =============================================
-# 36. SUORITA BOTTI
+# SUORITA
 # =============================================
 if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask, daemon=True)
