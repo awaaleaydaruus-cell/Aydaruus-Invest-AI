@@ -3,7 +3,7 @@ import logging
 import sqlite3
 import requests
 import yfinance as yf
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, timedelta
 import threading
 import feedparser
@@ -19,8 +19,6 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 TOKEN = os.environ["BOT_TOKEN"]
 PORT = int(os.environ.get("PORT", 10000))
 
-# Trading 212 API -avaimet (pakolliset live-toiminnoille, ei käytetä enää
-# tulevien osinkojen hakuun, koska T212 API:ssa ei ole ko. endpointtia)
 T212_API_KEY = os.environ.get("T212_API_KEY")
 T212_API_SECRET = os.environ.get("T212_API_SECRET")
 
@@ -51,36 +49,42 @@ def init_db():
 
 init_db()
 
-USER_ID = None
+def get_all_user_ids():
+    """Hakee kaikki käyttäjä-ID:t tietokannasta."""
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute("SELECT id FROM users")
+    rows = c.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
 
 # =============================================
 # 4. PORTFOLIO HOLDINGS
-# (Päivitetty Trading 212 "Confirmation of holdings" -asiakirjasta, 10.07.2026)
 # =============================================
 
-# ETFs (18 holdings) — hinnat EUR
+# ETF:t (18 kpl) — hinnat EUR, symbolit korjattu yfinance-yhteensopiviksi (.L = LSE)
 ETF_HOLDINGS = [
-    {"isin": "IE00B5BMR087", "symbol": "SPY5L",  "name": "iShares Core S&P 500 UCITS ETF",                      "quantity": 1.3195215,   "price": 711.48},
-    {"isin": "IE00BFMXXD54", "symbol": "VUAA",   "name": "Vanguard S&P 500 UCITS ETF",                          "quantity": 6.78430694,  "price": 127.59},
-    {"isin": "IE00B4L5Y983", "symbol": "IWDA",   "name": "iShares Core MSCI World UCITS ETF",                   "quantity": 7.86059909,  "price": 126.145},
-    {"isin": "IE00BK5BQT80", "symbol": "VWRA",   "name": "Vanguard FTSE All-World UCITS ETF",                   "quantity": 3.95788178,  "price": 166.14},
-    {"isin": "IE00B53SZB19", "symbol": "CNDX",   "name": "iShares NASDAQ 100 UCITS ETF",                        "quantity": 0.551902,    "price": 1493.8},
-    {"isin": "IE000XZSV718", "symbol": "SPY5",   "name": "SPDR S&P 500 UCITS ETF",                              "quantity": 35.45098256, "price": 16.3422},
-    {"isin": "IE00B3XXRP09", "symbol": "VUSA",   "name": "Vanguard S&P 500 UCITS ETF",                          "quantity": 5.07180738,  "price": 125.226},
-    {"isin": "IE0031442068", "symbol": "IUSA",   "name": "iShares Core S&P 500 UCITS ETF USD Dist",             "quantity": 8.69214914,  "price": 65.83},
-    {"isin": "IE00BYVQ9F29", "symbol": "EQQQ",   "name": "iShares NASDAQ 100 UCITS ETF",                        "quantity": 31.3511554,  "price": 17.26},
-    {"isin": "IE00B4YBJ215", "symbol": "SPY4",   "name": "SPDR S&P 400 U.S. Mid Cap UCITS ETF",                 "quantity": 0.44622786,  "price": 102.76},
-    {"isin": "IE00B1YZSC51", "symbol": "MEUD",   "name": "iShares Core MSCI Europe UCITS ETF",                  "quantity": 0.53227859,  "price": 40.205},
-    {"isin": "IE000U9J8HX9", "symbol": "JEQP",   "name": "JPMorgan Nasdaq Equity Premium Income Active UCITS",  "quantity": 499.68183622,"price": 23.865},
-    {"isin": "IE000U5MJOZ6", "symbol": "JEIP",   "name": "JPMorgan US Equity Premium Income Active UCITS",      "quantity": 9.86913538,  "price": 21.345},
-    {"isin": "IE0003UVYC20", "symbol": "JGPI",   "name": "JPMorgan Global Equity Premium Income Active UCITS",  "quantity": 5.68901188,  "price": 22.42},
-    {"isin": "IE00B8GKDB10", "symbol": "VHYL",   "name": "Vanguard FTSE All-World High Dividend Yield UCITS",   "quantity": 8.94573315,  "price": 79.882},
-    {"isin": "IE00BM8R0J59", "symbol": "QYLD",   "name": "Global X Nasdaq 100 Covered Call UCITS ETF",          "quantity": 1.67276214,  "price": 14.91},
-    {"isin": "IE00BMC38736", "symbol": "SMH",    "name": "VanEck Semiconductor UCITS ETF",                      "quantity": 0.24906248,  "price": 100.38},
-    {"isin": "IE00B6YX5D40", "symbol": "UDVD",   "name": "SPDR S&P US Dividend Aristocrats UCITS ETF",          "quantity": 10.69542998, "price": 74.53},
+    {"isin": "IE00B5BMR087", "symbol": "SPY5L.L",  "name": "iShares Core S&P 500 UCITS ETF",                      "quantity": 1.3195215,   "price": 711.48},
+    {"isin": "IE00BFMXXD54", "symbol": "VUAA.L",   "name": "Vanguard S&P 500 UCITS ETF",                          "quantity": 6.78430694,  "price": 127.59},
+    {"isin": "IE00B4L5Y983", "symbol": "IWDA.L",   "name": "iShares Core MSCI World UCITS ETF",                   "quantity": 7.86059909,  "price": 126.145},
+    {"isin": "IE00BK5BQT80", "symbol": "VWRA.L",   "name": "Vanguard FTSE All-World UCITS ETF",                   "quantity": 3.95788178,  "price": 166.14},
+    {"isin": "IE00B53SZB19", "symbol": "CNDX.L",   "name": "iShares NASDAQ 100 UCITS ETF",                        "quantity": 0.551902,    "price": 1493.8},
+    {"isin": "IE000XZSV718", "symbol": "SPY5.L",   "name": "SPDR S&P 500 UCITS ETF",                              "quantity": 35.45098256, "price": 16.3422},
+    {"isin": "IE00B3XXRP09", "symbol": "VUSA.L",   "name": "Vanguard S&P 500 UCITS ETF",                          "quantity": 5.07180738,  "price": 125.226},
+    {"isin": "IE0031442068", "symbol": "IUSA.L",   "name": "iShares Core S&P 500 UCITS ETF USD Dist",             "quantity": 8.69214914,  "price": 65.83},
+    {"isin": "IE00BYVQ9F29", "symbol": "EQQQ.L",   "name": "iShares NASDAQ 100 UCITS ETF",                        "quantity": 31.3511554,  "price": 17.26},
+    {"isin": "IE00B4YBJ215", "symbol": "SPY4.L",   "name": "SPDR S&P 400 U.S. Mid Cap UCITS ETF",                 "quantity": 0.44622786,  "price": 102.76},
+    {"isin": "IE00B1YZSC51", "symbol": "MEUD.L",   "name": "iShares Core MSCI Europe UCITS ETF",                  "quantity": 0.53227859,  "price": 40.205},
+    {"isin": "IE000U9J8HX9", "symbol": "JEQP.L",   "name": "JPMorgan Nasdaq Equity Premium Income Active UCITS",  "quantity": 499.68183622,"price": 23.865},
+    {"isin": "IE000U5MJOZ6", "symbol": "JEIP.L",   "name": "JPMorgan US Equity Premium Income Active UCITS",      "quantity": 9.86913538,  "price": 21.345},
+    {"isin": "IE0003UVYC20", "symbol": "JGPI.L",   "name": "JPMorgan Global Equity Premium Income Active UCITS",  "quantity": 5.68901188,  "price": 22.42},
+    {"isin": "IE00B8GKDB10", "symbol": "VHYL.L",   "name": "Vanguard FTSE All-World High Dividend Yield UCITS",   "quantity": 8.94573315,  "price": 79.882},
+    {"isin": "IE00BM8R0J59", "symbol": "QYLD.L",   "name": "Global X Nasdaq 100 Covered Call UCITS ETF",          "quantity": 1.67276214,  "price": 14.91},
+    {"isin": "IE00BMC38736", "symbol": "SMH.L",    "name": "VanEck Semiconductor UCITS ETF",                      "quantity": 0.24906248,  "price": 100.38},
+    {"isin": "IE00B6YX5D40", "symbol": "UDVD.L",   "name": "SPDR S&P US Dividend Aristocrats UCITS ETF",          "quantity": 10.69542998, "price": 74.53},
 ]
 
-# Stocks (27 holdings) — hinnat USD
+# Osakkeet (27 kpl) — hinnat USD, symbolit ovat yleensä suoraan yfinance-yhteensopivia
 STOCK_HOLDINGS = [
     {"isin": "US88160R1014", "symbol": "TSLA",  "name": "Tesla",                         "quantity": 1.77834002, "price": 407.59},
     {"isin": "US0231351067", "symbol": "AMZN",  "name": "Amazon",                        "quantity": 2.75130172, "price": 245.74},
@@ -111,9 +115,7 @@ STOCK_HOLDINGS = [
     {"isin": "US7475251036", "symbol": "QCOM",  "name": "Qualcomm",                      "quantity": 0.82236603, "price": 188.9},
 ]
 
-# Crypto holdings — nämä ovat ulkoisilla vaihdoilla / DCA-suunnitelmassa,
-# EIVÄT Trading 212 -tilillä (T212 Crypto -tili on tällä hetkellä tyhjä,
-# Holdings value: 0.00 EUR, vahvistettu 10.07.2026 confirmation-of-holdings-asiakirjassa)
+# Kryptot — ulkoiset DCA-hankinnat
 CRYPTO_HOLDINGS = [
     {"symbol": "bitcoin", "name": "BTC", "quantity": 0.00674376, "value_eur": 379.43},
     {"symbol": "ethereum", "name": "ETH", "quantity": 0.36953452, "value_eur": 587.15},
@@ -126,7 +128,7 @@ CRYPTO_HOLDINGS = [
     {"symbol": "chainlink", "name": "LINK", "quantity": 3.40208837, "value_eur": 23.86},
 ]
 
-# DCA ja Trading 212
+# DCA-suunnitelmat
 DCA_PLAN = {
     "name": "Aydaurus Dream",
     "amount_eur": 100,
@@ -147,7 +149,6 @@ TRADING212_PLAN = {
     "profit_percent": 11.97,
 }
 
-# Perheen holdings – jokaisella oma pie Trading 212 -sovelluksessa
 FAMILY_HOLDINGS = [
     {"name": "👨 Aydaruus Ahmed Wehliye (Dream)", "holdings": TRADING212_PLAN["holdings"], "value": TRADING212_PLAN["total_value"], "profit": TRADING212_PLAN["profit"], "profit_percent": TRADING212_PLAN["profit_percent"]},
     {"name": "Ismahaan Aydaurus", "holdings": 20, "value": 1184.98, "profit": 178.95, "profit_percent": 17.79},
@@ -157,11 +158,9 @@ FAMILY_HOLDINGS = [
     {"name": "Yahye Aydaurus", "holdings": 25, "value": 966.85, "profit": 128.01, "profit_percent": 15.27},
 ]
 
-# Koko tilin arvo (kaikki pie:t + käyttämätön käteinen) — Trading 212 "INVESTMENTS"-näkymä
 TOTAL_INVESTMENTS = 33253.64
 TOTAL_CRYPTO = sum(c["value_eur"] for c in CRYPTO_HOLDINGS)
 
-# Nopea haku: ISIN -> nykyinen omistusmäärä (käytetään osinkolaskennassa)
 CURRENT_QTY_BY_ISIN = {h["isin"]: h["quantity"] for h in ETF_HOLDINGS}
 CURRENT_QTY_BY_ISIN.update({h["isin"]: h["quantity"] for h in STOCK_HOLDINGS})
 
@@ -176,7 +175,6 @@ def get_crypto_price(symbol):
         "stellar": "XLM", "cardano": "ADA", "chainlink": "LINK"
     }
     sym = symbol_map.get(symbol, symbol.upper())
-
     try:
         url = f"https://api.kraken.com/0/public/Ticker?pair={sym}EUR"
         r = requests.get(url, timeout=10)
@@ -209,7 +207,6 @@ def get_crypto_price(symbol):
                 return data[symbol]["eur"]
     except Exception as e:
         logging.warning(f"CoinGecko error {symbol}: {e}")
-
     return None
 
 def get_btc_price(): return get_crypto_price("bitcoin")
@@ -240,29 +237,6 @@ def get_etf_price(symbol):
 # 6. HISTORIALLISET HINNAT (30 päivää) — /recommend -komentoa varten
 # =============================================
 
-def get_stock_historical(symbol, days=30):
-    try:
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period=f"{days}d")
-        if not hist.empty:
-            return round(hist["Close"].iloc[0], 2)
-    except Exception as e:
-        logging.error(f"Historical error {symbol}: {e}")
-    return None
-
-def get_crypto_historical(symbol, days=30):
-    try:
-        url = f"https://api.coingecko.com/api/v3/coins/{symbol}/market_chart?vs_currency=eur&days={days}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        r = requests.get(url, timeout=10, headers=headers)
-        if r.status_code == 200:
-            data = r.json()
-            if "prices" in data and len(data["prices"]) > 0:
-                return data["prices"][0][1]
-    except Exception as e:
-        logging.error(f"Crypto historical error {symbol}: {e}")
-    return None
-
 def get_recommendation(current_price, old_price, name):
     if current_price is None or old_price is None or old_price == 0:
         return "❓", "Ei tarpeeksi dataa"
@@ -275,13 +249,8 @@ def get_recommendation(current_price, old_price, name):
         return "🟡 HOLD", f"{change:+.1f}% (neutraali)"
 
 # =============================================
-# 7. OSINGOT — LUE CSV:STÄ (TODELLISET, TRADING 212 -TILIOTE)
+# 7. OSINGOT — LUE CSV:STÄ
 # =============================================
-# CSV-tiedoston sarakkeet (Trading 212 -vienti):
-# Action, Time, ISIN, Ticker, Name, No. of shares, Price / share,
-# Currency (Price / share), Exchange rate, Total, Currency (Total),
-# Withholding tax, Currency (Withholding tax)
-
 DIVIDENDS_CSV_PATH = "dividends.csv"
 
 def _load_dividends_dataframe():
@@ -295,8 +264,6 @@ def _load_dividends_dataframe():
     return df.sort_values('Date')
 
 def get_dividend_details():
-    """Palauttaa listan yksittäisistä osinkomaksuista (kuka maksoi, milloin, kuinka paljon)
-    sekä koko ajanjakson yhteissumman, lukien dividends.csv:stä."""
     try:
         df = _load_dividends_dataframe()
     except Exception as e:
@@ -317,14 +284,11 @@ def get_dividend_details():
             "currency": row.get('Currency (Price / share)', ''),
             "tax": round(row['Tax'], 2),
         })
-
     dividend_list.sort(key=lambda x: x['date_sort'], reverse=True)
     total = round(sum(d['amount'] for d in dividend_list), 2)
     return dividend_list, total
 
 def get_dividends_by_month(dividend_list):
-    """Ryhmittelee osingot kuukausittain (avain 'MM/YYYY') ja palauttaa
-    (monthly_dict, yearly_total)."""
     monthly = {}
     for d in dividend_list:
         key = d['date_sort'].strftime('%m/%Y')
@@ -336,14 +300,7 @@ def get_dividends_by_month(dividend_list):
 # =============================================
 # 8. TULEVAT OSINGOT — ARVIO CSV-HISTORIAN PERUSTEELLA
 # =============================================
-# Trading 212:n API:ssa ei ole "tulevat osingot" -endpointtia (vain
-# toteutuneet maksut), joten tulevat osingot arvioidaan CSV-historian
-# maksuvälin ja viimeisimmän €/osake-summan perusteella, kerrottuna
-# NYKYISELLÄ omistusmäärällä (Confirmation of holdings -asiakirjasta).
-
 def get_upcoming_dividends_estimated(until_date=None):
-    """Arvioi tulevat osingot tähän päivään asti annettuun until_date-päivämäärään saakka.
-    Oletus: kuluvan vuoden loppu (31.12.), jottei lista rönsyile seuraavaan vuoteen."""
     try:
         df = _load_dividends_dataframe()
     except Exception as e:
@@ -357,18 +314,15 @@ def get_upcoming_dividends_estimated(until_date=None):
     for isin, group in df.groupby('ISIN'):
         group = group.sort_values('Date')
         if len(group) < 2:
-            continue  # ei tarpeeksi historiaa maksuvälin päättelyyn
-
+            continue
         qty = CURRENT_QTY_BY_ISIN.get(isin)
         if not qty:
-            continue  # ei enää (tai ei koskaan) salkussa
-
+            continue
         name = group.iloc[-1]['Name']
         ticker = group.iloc[-1]['Ticker']
         dates = group['Date'].tolist()
         intervals = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
         avg_interval = sum(intervals) / len(intervals)
-
         last_row = group.iloc[-1]
         last_per_share = last_row['PerShare']
         next_date = dates[-1] + timedelta(days=avg_interval)
@@ -388,7 +342,6 @@ def get_upcoming_dividends_estimated(until_date=None):
             next_date += timedelta(days=avg_interval)
 
     projected.sort(key=lambda x: x['date_sort'])
-
     monthly = {}
     yearly_total = 0.0
     for div in projected:
@@ -396,11 +349,10 @@ def get_upcoming_dividends_estimated(until_date=None):
         monthly[key] = monthly.get(key, 0.0) + div['amount']
         yearly_total += div['amount']
     monthly = {k: round(v, 2) for k, v in monthly.items()}
-
     return projected, monthly, round(yearly_total, 2)
 
 # =============================================
-# 9. TAVOITE (100k)
+# 9. TAVOITELASKENTA (Yleiset apufunktiot)
 # =============================================
 
 def calculate_goal(current_value, monthly_savings, target=100000, yearly_return_pct=0.07):
@@ -416,9 +368,6 @@ def calculate_goal(current_value, monthly_savings, target=100000, yearly_return_
     return months, datetime.now() + timedelta(days=months * 30)
 
 def calculate_compounding_crossover(current_value, monthly_savings, yearly_return_pct=0.07):
-    """Laskee kuukauden, jolloin sijoitusten kasvu (korkotuotto) ylittää
-    kuukausittain lisättävän säästösumman — eli 'compounding' alkaa kantaa
-    enemmän kuin oma kuukausisäästö."""
     monthly_return = (1 + yearly_return_pct) ** (1 / 12) - 1
     value = current_value
     months = 0
@@ -476,14 +425,16 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /news: {str(e)[:200]}")
 
 # =============================================
-# 11. WARBIXIN MAALINLE
+# 11. AAMURAPORTTI (lähetetään kaikille käyttäjille)
 # =============================================
 
 async def send_daily_report():
     try:
-        global USER_ID
-        if USER_ID is None:
+        user_ids = get_all_user_ids()
+        if not user_ids:
+            logging.info("Ei käyttäjiä, jätetään raportti lähettämättä.")
             return
+
         btc = get_btc_price()
         eth = get_eth_price()
         sol = get_sol_price()
@@ -494,10 +445,11 @@ async def send_daily_report():
         ada = get_ada_price()
         link = get_link_price()
 
-        msg = "📊 *Subax wanaagsan, Aydaruus!*\n\n"
+        msg = "📊 *Subax wanaagsan, sijoittaja!*\n\n"
         msg += "💰 *Portfolio-gaaga*\n━━━━━━━━━━━━━━━━━\n"
-        msg += f"💵 Wadarta guud: €{TOTAL_INVESTMENTS:,.2f}\n"
-        msg += f"🪙 Crypto holdings: €{TOTAL_CRYPTO:,.2f}\n\n"
+        msg += f"💵 Wadarta guud (Trading212): €{TOTAL_INVESTMENTS:,.2f}\n"
+        msg += f"🪙 Crypto holdings: €{TOTAL_CRYPTO:,.2f}\n"
+        msg += f"💎 Yhteensä: €{TOTAL_INVESTMENTS + TOTAL_CRYPTO:,.2f}\n\n"
 
         msg += "🪙 *Crypto qiimaha hadda:*\n"
         for label, val in [("₿ BTC", btc), ("⟠ ETH", eth), ("◎ SOL", sol), ("✕ XRP", xrp),
@@ -506,9 +458,9 @@ async def send_daily_report():
             msg += f"{label}: €{val:,.2f}\n" if val else f"{label}: Laga ma helin\n"
 
         _, total_div = get_dividend_details()
-        months, target_date = calculate_goal(TOTAL_INVESTMENTS, TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur'])
-        msg += f"\n🎯 *100k € tavoite*\n"
-        msg += f"📈 Puuttuu: €{100000 - TOTAL_INVESTMENTS:,.2f}\n"
+        months, target_date = calculate_goal(TOTAL_INVESTMENTS + TOTAL_CRYPTO, TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur'])
+        msg += f"\n🎯 *100k € tavoite (yhteensä)*\n"
+        msg += f"📈 Puuttuu: €{100000 - (TOTAL_INVESTMENTS + TOTAL_CRYPTO):,.2f}\n"
         msg += f"📅 Arvio: {target_date.strftime('%d.%m.%Y')} ({months} kk)\n"
         msg += f"💵 Osingot (12 kk, todelliset): €{total_div:,.2f}\n"
 
@@ -521,30 +473,30 @@ async def send_daily_report():
             next_year = today.year if today.month < 12 else today.year + 1
             msg += f"\n📌 Togga xiga: 10-{next_month:02d}-{next_year}"
 
-        try:
-            app = Application.builder().token(TOKEN).build()
-            await app.bot.send_message(chat_id=USER_ID, text=msg, parse_mode="Markdown")
-        except Exception as e:
-            logging.error(f"Warbixin maalinle ah waa ay fashilantay: {e}")
+        # Lähetä jokaiselle
+        app = Application.builder().token(TOKEN).build()
+        for uid in user_ids:
+            try:
+                await app.bot.send_message(chat_id=uid, text=msg, parse_mode="Markdown")
+            except Exception as e:
+                logging.error(f"Raportin lähetys käyttäjälle {uid} epäonnistui: {e}")
     except Exception as e:
         logging.error(f"Virhe send_daily_report: {e}")
 
 # =============================================
-# 12. QORSHEYNTA
+# 12. AJOITUS (AsyncIOScheduler)
 # =============================================
-scheduler = BackgroundScheduler()
+scheduler = AsyncIOScheduler()
 scheduler.add_job(send_daily_report, 'cron', hour=9, minute=0, id="daily_report", replace_existing=True)
 scheduler.start()
 
 # =============================================
-# 13. TELEGRAM KOMENNOT — PERUS (KAIKKI TRY/EXCEPT)
+# 13. TELEGRAM KOMENNOT
 # =============================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        global USER_ID
         user = update.effective_user
-        USER_ID = user.id
         try:
             conn = sqlite3.connect("users.db")
             c = conn.cursor()
@@ -566,7 +518,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/crypto - Muuji crypto holdings\n"
             "/testapi - Tijaabi API-yada\n"
             "/news - Uutiset omistuksista\n"
-            "/goal - Tavoite 100k €\n"
+            "/goal - Tavoitteet (Trading212, krypto ja yhteensä)\n"
             "/dividends - Tulevat osingot, kk-ryhmiteltynä\n"
             "/recommend - Sijoitusanalyysi & suositukset\n\n"
             "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin!",
@@ -598,7 +550,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/crypto - Muuji crypto holdings\n"
             "/testapi - Tijaabi API-yada\n"
             "/news - Uutiset omistuksista\n"
-            "/goal - Tavoite 100k €\n"
+            "/goal - Tavoitteet (Trading212, krypto ja yhteensä)\n"
             "/dividends - Tulevat osingot, kk-ryhmiteltynä\n"
             "/recommend - Sijoitusanalyysi & suositukset\n\n"
             "💰 *DCA:* €100/bil (crypto) + €450/kk (Trading 212)\n"
@@ -636,8 +588,8 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"\n💰 *Crypto holdings:* €{TOTAL_CRYPTO:,.2f}\n"
         msg += f"💵 *Wadarta guud:* €{TOTAL_INVESTMENTS:,.2f}"
 
-        months, target_date = calculate_goal(TOTAL_INVESTMENTS, TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur'])
-        msg += f"\n\n🎯 *100k €:* puuttuu €{100000 - TOTAL_INVESTMENTS:,.2f}, arvio {target_date.strftime('%d.%m.%Y')} ({months} kk)"
+        months, target_date = calculate_goal(TOTAL_INVESTMENTS + TOTAL_CRYPTO, TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur'])
+        msg += f"\n\n🎯 *100k €:* puuttuu €{100000 - (TOTAL_INVESTMENTS + TOTAL_CRYPTO):,.2f}, arvio {target_date.strftime('%d.%m.%Y')} ({months} kk)"
 
         await update.message.reply_text(msg, parse_mode="Markdown")
     except Exception as e:
@@ -648,7 +600,8 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         msg = "📊 *Portfolio-gaaga*\n━━━━━━━━━━━━━━━━━\n\n"
         msg += f"💰 *Wadarta guud (T212 Invest):* €{TOTAL_INVESTMENTS:,.2f}\n"
-        msg += f"🪙 *Crypto holdings (ulkoinen):* €{TOTAL_CRYPTO:,.2f}\n\n"
+        msg += f"🪙 *Crypto holdings (ulkoinen):* €{TOTAL_CRYPTO:,.2f}\n"
+        msg += f"💎 *Yhteensä:* €{TOTAL_INVESTMENTS + TOTAL_CRYPTO:,.2f}\n\n"
         msg += f"📈 *ETF holdings:* {len(ETF_HOLDINGS)} holdings\n"
         msg += f"📈 *Stock holdings:* {len(STOCK_HOLDINGS)} holdings\n"
         msg += f"🪙 *Crypto holdings:* {len(CRYPTO_HOLDINGS)} holdings\n\n"
@@ -751,38 +704,70 @@ async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Virhe /testapi: {e}")
         await update.message.reply_text(f"⚠️ Virhe /testapi: {str(e)[:200]}")
 
+# =============================================
+# 14. UUSI /goal — kolme erillistä osiota
+# =============================================
+
 async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        monthly_savings = TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur']
+        # 1) Trading212
+        t212_value = TOTAL_INVESTMENTS
+        t212_savings = TRADING212_PLAN['amount_eur']
+        t212_goals = [50000, 100000]
+
+        # 2) Krypto (Binance / DCA)
+        crypto_value = TOTAL_CRYPTO
+        crypto_savings = DCA_PLAN['amount_eur']
+        crypto_goals = [10000, 20000, 50000, 100000]
+
+        # 3) Yhteensä
+        total_value = t212_value + crypto_value
+        total_savings = t212_savings + crypto_savings
+        total_goals = [50000, 100000, 250000, 500000, 1000000]
 
         msg = "🎯 *Sijoitustavoitteet*\n━━━━━━━━━━━━━━━━━\n\n"
-        msg += f"💰 Nykyinen salkun arvo: €{TOTAL_INVESTMENTS:,.2f}\n"
-        msg += f"📊 Kuukausisäästö: €{monthly_savings:,.0f} (Trading212 + crypto DCA)\n\n"
 
-        if TOTAL_INVESTMENTS >= 50000:
-            msg += "✅ *50 000 €* — saavutettu jo!\n\n"
-        else:
-            months_50k, date_50k = calculate_goal(TOTAL_INVESTMENTS, monthly_savings, target=50000)
-            msg += f"🥉 *50 000 €*\n"
-            msg += f"   📅 Arvioitu saavutus: {date_50k.strftime('%d.%m.%Y')} ({months_50k} kk)\n"
-            msg += f"   📈 Puuttuu: €{50000 - TOTAL_INVESTMENTS:,.2f}\n\n"
-
-        months_100k, date_100k = calculate_goal(TOTAL_INVESTMENTS, monthly_savings, target=100000)
-        msg += f"🏆 *100 000 €*\n"
-        msg += f"   📅 Arvioitu saavutus: {date_100k.strftime('%d.%m.%Y')} ({months_100k} kk)\n"
-        msg += f"   📈 Puuttuu: €{100000 - TOTAL_INVESTMENTS:,.2f}\n\n"
-
-        cross_months, cross_date, cross_interest = calculate_compounding_crossover(TOTAL_INVESTMENTS, monthly_savings)
-        msg += "📊 *Compounding-piste*\n"
+        # --- Trading212 ---
+        msg += "📊 *Trading212 (450 €/kk)*\n"
+        msg += f"💰 Nykyinen arvo: €{t212_value:,.2f}\n"
+        for target in t212_goals:
+            if t212_value >= target:
+                msg += f"   ✅ *{target:,.0f} €* — saavutettu!\n"
+            else:
+                months, date = calculate_goal(t212_value, t212_savings, target=target)
+                msg += f"   🥅 *{target:,.0f} €*: {date.strftime('%d.%m.%Y')} ({months} kk), puuttuu €{target - t212_value:,.2f}\n"
+        # Compounding-piste vain Trading212:lle
+        cross_months, cross_date, cross_interest = calculate_compounding_crossover(t212_value, t212_savings)
+        msg += "   📈 *Compounding-piste*: "
         if cross_months is not None:
             if cross_months == 0:
-                msg += "   ✅ Korkotuotto ylittää jo kuukausisäästösi — kasvu kantaa itse itseään!\n"
+                msg += "✅ korkotuotto ylittää jo kuukausisäästön!\n"
             else:
-                msg += f"   📅 {cross_date.strftime('%d.%m.%Y')} ({cross_months} kk)\n"
-                msg += f"   ℹ️ Tästä eteenpäin salkun kuukausittainen korkotuotto (~€{cross_interest:,.0f}) ylittää €{monthly_savings:,.0f} kuukausisäästösi —\n"
-                msg += "   sijoitusten oma kasvu alkaa tuottaa enemmän kuin itse laitat rahaa sisään."
+                msg += f"{cross_date.strftime('%d.%m.%Y')} ({cross_months} kk), korko ~€{cross_interest:,.0f}/kk\n"
         else:
-            msg += "   ⚠️ Ei saavutettu laskenta-ajan (50 v) sisällä nykyisillä oletuksilla."
+            msg += "ei saavutettu 50 v sisällä\n"
+        msg += "\n"
+
+        # --- Krypto ---
+        msg += "🪙 *Binance / krypto DCA (100 €/kk)*\n"
+        msg += f"💰 Nykyinen arvo: €{crypto_value:,.2f}\n"
+        for target in crypto_goals:
+            if crypto_value >= target:
+                msg += f"   ✅ *{target:,.0f} €* — saavutettu!\n"
+            else:
+                months, date = calculate_goal(crypto_value, crypto_savings, target=target)
+                msg += f"   🥅 *{target:,.0f} €*: {date.strftime('%d.%m.%Y')} ({months} kk), puuttuu €{target - crypto_value:,.2f}\n"
+        msg += "\n"
+
+        # --- Yhteensä ---
+        msg += "💎 *Yhteensä (Trading212 + krypto, 550 €/kk)*\n"
+        msg += f"💰 Nykyinen arvo: €{total_value:,.2f}\n"
+        for target in total_goals:
+            if total_value >= target:
+                msg += f"   ✅ *{target:,.0f} €* — saavutettu!\n"
+            else:
+                months, date = calculate_goal(total_value, total_savings, target=target)
+                msg += f"   🥅 *{target:,.0f} €*: {date.strftime('%d.%m.%Y')} ({months} kk), puuttuu €{target - total_value:,.2f}\n"
 
         await update.message.reply_text(msg, parse_mode="Markdown")
     except Exception as e:
@@ -790,8 +775,7 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /goal: {str(e)[:200]}")
 
 # =============================================
-# 14. MENNEET OSINGOT — kuka maksoi, milloin, kuinka paljon
-#     + kuukausittain + koko vuosi
+# 15. MENNEET OSINGOT
 # =============================================
 FI_MONTHS = {
     "01": "Tammikuu", "02": "Helmikuu", "03": "Maaliskuu", "04": "Huhtikuu",
@@ -800,9 +784,6 @@ FI_MONTHS = {
 }
 
 async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Tulevat osingot, siististi kuukausittain ryhmiteltynä:
-    maksupäivä-järjestyksessä kuka maksaa ja paljonko, kuukausi kerralla + kk-summa,
-    lopussa koko vuoden yhteissumma."""
     try:
         current_year = datetime.now().year
         projected, monthly, yearly_total = get_upcoming_dividends_estimated()
@@ -814,7 +795,6 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Ryhmittele kuukausittain, säilytä maksupäiväjärjestys kunkin kuukauden sisällä
         by_month = {}
         for div in projected:
             key = div['date_sort'].strftime('%m/%Y')
@@ -835,7 +815,6 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         footer = f"\n💰 *Yhteensä (vuoden {current_year} loppuun):* €{yearly_total:,.2f}"
 
-        # Kokoa viestit n. 3500 merkin paloihin kuukausirajoilla
         max_len = 3500
         current = header
         messages = []
@@ -856,44 +835,73 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /dividends: {str(e)[:200]}")
 
 # =============================================
-# 15. SUOSITUKSET (BUY/HOLD/SELL)
+# 16. SUOSITUKSET (BUY/HOLD/SELL) — NOPEUTETTU
 # =============================================
+
 async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         msg = "📊 *Sijoitusanalyysi & suositukset*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━━━\n"
         msg += "⚡ 30 päivän hinnanmuutokseen perustuen:\n\n"
 
+        # 1) Kryptot (haetaan yksitellen)
         msg += "🪙 *Kryptot*\n"
-        crypto_prices = {
-            "BTC": get_btc_price(), "ETH": get_eth_price(), "SOL": get_sol_price(),
-            "XRP": get_xrp_price(), "BNB": get_bnb_price(), "SUI": get_sui_price(),
-            "XLM": get_xlm_price(), "ADA": get_ada_price(), "LINK": get_link_price()
+        crypto_symbols = {
+            "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana",
+            "XRP": "ripple", "BNB": "binancecoin", "SUI": "sui",
+            "XLM": "stellar", "ADA": "cardano", "LINK": "chainlink"
         }
-        for name, current in crypto_prices.items():
+        for name, sym in crypto_symbols.items():
+            current = get_crypto_price(sym)
             if current:
-                old = get_crypto_historical(name.lower(), 30)
+                old = get_crypto_historical(sym, 30)
                 rec, detail = get_recommendation(current, old, name)
                 msg += f"{rec} *{name}*: €{current:,.0f} ({detail})\n"
             else:
                 msg += f"❌ {name}: Ei hintaa\n"
+        msg += "\n"
 
-        msg += "\n📈 *ETF:t*\n"
+        # 2) ETF:t ja osakkeet yhdellä yf.download()-kutsulla
+        # Kerätään symbolit
+        etf_symbols = [etf["symbol"] for etf in ETF_HOLDINGS]
+        stock_symbols = [stock["symbol"] for stock in STOCK_HOLDINGS]
+        all_symbols = etf_symbols + stock_symbols
+
+        # Ladataan 1 kuukauden hinnat kerralla
+        try:
+            data = yf.download(tickers=" ".join(all_symbols), period="1mo", group_by='ticker', timeout=30)
+        except Exception as e:
+            logging.error(f"yf.download error: {e}")
+            data = {}
+
+        # Apufunktio hinnan ja vanhan hinnan hakemiseksi
+        def get_prices(symbol):
+            if symbol in data and not data[symbol].empty:
+                df = data[symbol]
+                if 'Close' in df.columns:
+                    current_price = df['Close'].iloc[-1]
+                    old_price = df['Close'].iloc[0]
+                    return current_price, old_price
+            return None, None
+
+        # ETF:t
+        msg += "📈 *ETF:t*\n"
         for etf in ETF_HOLDINGS:
-            ticker = etf["symbol"]
-            current = get_etf_price(ticker)
-            if current:
-                old = get_stock_historical(ticker, 30)
+            sym = etf["symbol"]
+            current, old = get_prices(sym)
+            if current is not None:
                 rec, detail = get_recommendation(current, old, etf["name"])
                 msg += f"{rec} *{etf['name'][:22]}*: €{current:,.2f} ({detail})\n"
             else:
                 msg += f"❌ {etf['name'][:22]}: Ei hintaa\n"
+        msg += "\n"
 
-        msg += "\n📊 *Osakkeet*\n"
+        # Osakkeet
+        msg += "📊 *Osakkeet*\n"
         for stock in STOCK_HOLDINGS:
-            current = get_stock_price(stock["symbol"])
-            if current:
-                old = get_stock_historical(stock["symbol"], 30)
+            sym = stock["symbol"]
+            current, old = get_prices(sym)
+            if current is not None:
                 rec, detail = get_recommendation(current, old, stock["name"])
                 msg += f"{rec} *{stock['name'][:18]}*: ${current:,.2f} ({detail})\n"
             else:
@@ -910,7 +918,7 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /recommend: {str(e)[:200]}")
 
 # =============================================
-# 16. VIRHEIDENKÄSITTELY (Yleinen)
+# 17. VIRHEIDENKÄSITTELY
 # =============================================
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.error(f"Virhe: {context.error}")
@@ -923,7 +931,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # =============================================
-# 17. FLASK
+# 18. FLASK
 # =============================================
 flask_app = Flask(__name__)
 
@@ -935,7 +943,7 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=PORT, debug=False)
 
 # =============================================
-# 18. PÄÄFUNKTIO
+# 19. PÄÄFUNKTIO
 # =============================================
 def run_bot():
     app = Application.builder().token(TOKEN).build()
