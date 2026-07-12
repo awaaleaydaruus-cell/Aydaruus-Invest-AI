@@ -3,7 +3,7 @@ import logging
 import sqlite3
 import requests
 import yfinance as yf
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
 import threading
 import feedparser
@@ -84,7 +84,7 @@ ETF_HOLDINGS = [
     {"isin": "IE00B6YX5D40", "symbol": "UDVD.L",   "name": "SPDR S&P US Dividend Aristocrats UCITS ETF",          "quantity": 10.69542998, "price": 74.53},
 ]
 
-# Osakkeet (27 kpl) — hinnat USD, symbolit ovat yleensä suoraan yfinance-yhteensopivia
+# Osakkeet (27 kpl) — hinnat USD
 STOCK_HOLDINGS = [
     {"isin": "US88160R1014", "symbol": "TSLA",  "name": "Tesla",                         "quantity": 1.77834002, "price": 407.59},
     {"isin": "US0231351067", "symbol": "AMZN",  "name": "Amazon",                        "quantity": 2.75130172, "price": 245.74},
@@ -236,6 +236,19 @@ def get_etf_price(symbol):
 # =============================================
 # 6. HISTORIALLISET HINNAT (30 päivää) — /recommend -komentoa varten
 # =============================================
+
+def get_crypto_historical(symbol, days=30):
+    try:
+        url = f"https://api.coingecko.com/api/v3/coins/{symbol}/market_chart?vs_currency=eur&days={days}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        r = requests.get(url, timeout=10, headers=headers)
+        if r.status_code == 200:
+            data = r.json()
+            if "prices" in data and len(data["prices"]) > 0:
+                return data["prices"][0][1]
+    except Exception as e:
+        logging.error(f"Crypto historical error {symbol}: {e}")
+    return None
 
 def get_recommendation(current_price, old_price, name):
     if current_price is None or old_price is None or old_price == 0:
@@ -484,10 +497,16 @@ async def send_daily_report():
         logging.error(f"Virhe send_daily_report: {e}")
 
 # =============================================
-# 12. AJOITUS (AsyncIOScheduler)
+# 12. AJOITUS (BackgroundScheduler + synkroninen wrapper)
 # =============================================
-scheduler = AsyncIOScheduler()
-scheduler.add_job(send_daily_report, 'cron', hour=9, minute=0, id="daily_report", replace_existing=True)
+
+def send_daily_report_sync():
+    """Synkroninen wrapper async-funktiolle."""
+    import asyncio
+    asyncio.run(send_daily_report())
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(send_daily_report_sync, 'cron', hour=9, minute=0, id="daily_report", replace_existing=True)
 scheduler.start()
 
 # =============================================
@@ -862,19 +881,16 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += "\n"
 
         # 2) ETF:t ja osakkeet yhdellä yf.download()-kutsulla
-        # Kerätään symbolit
         etf_symbols = [etf["symbol"] for etf in ETF_HOLDINGS]
         stock_symbols = [stock["symbol"] for stock in STOCK_HOLDINGS]
         all_symbols = etf_symbols + stock_symbols
 
-        # Ladataan 1 kuukauden hinnat kerralla
         try:
             data = yf.download(tickers=" ".join(all_symbols), period="1mo", group_by='ticker', timeout=30)
         except Exception as e:
             logging.error(f"yf.download error: {e}")
             data = {}
 
-        # Apufunktio hinnan ja vanhan hinnan hakemiseksi
         def get_prices(symbol):
             if symbol in data and not data[symbol].empty:
                 df = data[symbol]
@@ -884,7 +900,6 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return current_price, old_price
             return None, None
 
-        # ETF:t
         msg += "📈 *ETF:t*\n"
         for etf in ETF_HOLDINGS:
             sym = etf["symbol"]
@@ -896,7 +911,6 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg += f"❌ {etf['name'][:22]}: Ei hintaa\n"
         msg += "\n"
 
-        # Osakkeet
         msg += "📊 *Osakkeet*\n"
         for stock in STOCK_HOLDINGS:
             sym = stock["symbol"]
