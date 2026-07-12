@@ -9,10 +9,6 @@ import threading
 import feedparser
 import re
 import pandas as pd
-import json
-import base64
-import hmac
-import hashlib
 from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -23,7 +19,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 TOKEN = os.environ["BOT_TOKEN"]
 PORT = int(os.environ.get("PORT", 10000))
 
-# Trading 212 API -avaimet (pakolliset)
+# Trading 212 API -avaimet (pakolliset live-toiminnoille, ei käytetä enää
+# tulevien osinkojen hakuun, koska T212 API:ssa ei ole ko. endpointtia)
 T212_API_KEY = os.environ.get("T212_API_KEY")
 T212_API_SECRET = os.environ.get("T212_API_SECRET")
 
@@ -49,14 +46,6 @@ def init_db():
             last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS prices (
-            id INTEGER PRIMARY KEY,
-            symbol TEXT,
-            price REAL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
     conn.commit()
     conn.close()
 
@@ -66,62 +55,65 @@ USER_ID = None
 
 # =============================================
 # 4. PORTFOLIO HOLDINGS
+# (Päivitetty Trading 212 "Confirmation of holdings" -asiakirjasta, 10.07.2026)
 # =============================================
 
-# ETFs (18 holdings)
+# ETFs (18 holdings) — hinnat EUR
 ETF_HOLDINGS = [
-    {"isin": "IE00B5BMR087", "name": "iShares Core S&P 500", "quantity": 1.3195, "price": 711.48},
-    {"isin": "IE00BFMXXD54", "name": "Vanguard S&P 500", "quantity": 46.7843, "price": 127.59},
-    {"isin": "IE00B4L5Y983", "name": "iShares Core MSCI World", "quantity": 7.8606, "price": 126.145},
-    {"isin": "IE00BK5BQT80", "name": "Vanguard FTSE All-World", "quantity": 3.9579, "price": 166.14},
-    {"isin": "IE00B53SZ819", "name": "iShares NASDAQ 100", "quantity": 0.5519, "price": 1493.8},
-    {"isin": "IE00XZSV7183", "name": "SPDR S&P 500", "quantity": 35.4510, "price": 16.3422},
-    {"isin": "IE00B3XXRP09", "name": "Vanguard S&P 500", "quantity": 5.0718, "price": 125.226},
-    {"isin": "IE0031442068", "name": "iShares Core S&P 500 Dist", "quantity": 8.6921, "price": 65.83},
-    {"isin": "IE00BYVQ9F29", "name": "iShares NASDAQ 100", "quantity": 31.3512, "price": 17.26},
-    {"isin": "IE00B4YBJ215", "name": "SPDR S&P 400 Mid Cap", "quantity": 0.4462, "price": 102.76},
-    {"isin": "IE00B1YZSC51", "name": "iShares Core MSCI Europe", "quantity": 0.5323, "price": 40.205},
-    {"isin": "IE00U9J8HX94", "name": "JPMorgan Nasdaq Premium", "quantity": 99.6818, "price": 23.865},
-    {"isin": "IE00U5MJOZ6", "name": "JPMorgan US Equity Premium", "quantity": 9.8691, "price": 21.345},
-    {"isin": "IE0003UVYC20", "name": "JPMorgan Global Equity Premium", "quantity": 5.6890, "price": 22.42},
-    {"isin": "IE00B8GKD810", "name": "Vanguard FTSE All-World High Div", "quantity": 8.9457, "price": 79.882},
-    {"isin": "IE00BM8ROJ59", "name": "Global X Nasdaq 100 Covered Call", "quantity": 1.6728, "price": 14.91},
-    {"isin": "IE00BMC38736", "name": "VanEck Semiconductor", "quantity": 0.2491, "price": 100.38},
-    {"isin": "IE00B6YX5D40", "name": "SPDR S&P US Dividend Aristocrats", "quantity": 10.6954, "price": 74.53}
+    {"isin": "IE00B5BMR087", "symbol": "SPY5L",  "name": "iShares Core S&P 500 UCITS ETF",                      "quantity": 1.3195215,   "price": 711.48},
+    {"isin": "IE00BFMXXD54", "symbol": "VUAA",   "name": "Vanguard S&P 500 UCITS ETF",                          "quantity": 6.78430694,  "price": 127.59},
+    {"isin": "IE00B4L5Y983", "symbol": "IWDA",   "name": "iShares Core MSCI World UCITS ETF",                   "quantity": 7.86059909,  "price": 126.145},
+    {"isin": "IE00BK5BQT80", "symbol": "VWRA",   "name": "Vanguard FTSE All-World UCITS ETF",                   "quantity": 3.95788178,  "price": 166.14},
+    {"isin": "IE00B53SZB19", "symbol": "CNDX",   "name": "iShares NASDAQ 100 UCITS ETF",                        "quantity": 0.551902,    "price": 1493.8},
+    {"isin": "IE000XZSV718", "symbol": "SPY5",   "name": "SPDR S&P 500 UCITS ETF",                              "quantity": 35.45098256, "price": 16.3422},
+    {"isin": "IE00B3XXRP09", "symbol": "VUSA",   "name": "Vanguard S&P 500 UCITS ETF",                          "quantity": 5.07180738,  "price": 125.226},
+    {"isin": "IE0031442068", "symbol": "IUSA",   "name": "iShares Core S&P 500 UCITS ETF USD Dist",             "quantity": 8.69214914,  "price": 65.83},
+    {"isin": "IE00BYVQ9F29", "symbol": "EQQQ",   "name": "iShares NASDAQ 100 UCITS ETF",                        "quantity": 31.3511554,  "price": 17.26},
+    {"isin": "IE00B4YBJ215", "symbol": "SPY4",   "name": "SPDR S&P 400 U.S. Mid Cap UCITS ETF",                 "quantity": 0.44622786,  "price": 102.76},
+    {"isin": "IE00B1YZSC51", "symbol": "MEUD",   "name": "iShares Core MSCI Europe UCITS ETF",                  "quantity": 0.53227859,  "price": 40.205},
+    {"isin": "IE000U9J8HX9", "symbol": "JEQP",   "name": "JPMorgan Nasdaq Equity Premium Income Active UCITS",  "quantity": 499.68183622,"price": 23.865},
+    {"isin": "IE000U5MJOZ6", "symbol": "JEIP",   "name": "JPMorgan US Equity Premium Income Active UCITS",      "quantity": 9.86913538,  "price": 21.345},
+    {"isin": "IE0003UVYC20", "symbol": "JGPI",   "name": "JPMorgan Global Equity Premium Income Active UCITS",  "quantity": 5.68901188,  "price": 22.42},
+    {"isin": "IE00B8GKDB10", "symbol": "VHYL",   "name": "Vanguard FTSE All-World High Dividend Yield UCITS",   "quantity": 8.94573315,  "price": 79.882},
+    {"isin": "IE00BM8R0J59", "symbol": "QYLD",   "name": "Global X Nasdaq 100 Covered Call UCITS ETF",          "quantity": 1.67276214,  "price": 14.91},
+    {"isin": "IE00BMC38736", "symbol": "SMH",    "name": "VanEck Semiconductor UCITS ETF",                      "quantity": 0.24906248,  "price": 100.38},
+    {"isin": "IE00B6YX5D40", "symbol": "UDVD",   "name": "SPDR S&P US Dividend Aristocrats UCITS ETF",          "quantity": 10.69542998, "price": 74.53},
 ]
 
-# Stocks (27 holdings)
+# Stocks (27 holdings) — hinnat USD
 STOCK_HOLDINGS = [
-    {"symbol": "TSLA", "name": "Tesla", "quantity": 1.7783, "price": 407.59},
-    {"symbol": "AMZN", "name": "Amazon", "quantity": 2.7513, "price": 245.74},
-    {"symbol": "MSFT", "name": "Microsoft", "quantity": 51.2188, "price": 385.34},
-    {"symbol": "NVDA", "name": "NVIDIA", "quantity": 7.7732, "price": 210.57},
-    {"symbol": "KO", "name": "Coca-Cola", "quantity": 78.6142, "price": 83.45},
-    {"symbol": "CVX", "name": "Chevron", "quantity": 53.2040, "price": 176.16},
-    {"symbol": "JPM", "name": "JPMorgan Chase", "quantity": 53.8594, "price": 336.88},
-    {"symbol": "META", "name": "Meta", "quantity": 70.7542, "price": 668},
-    {"symbol": "PLTR", "name": "Palantir", "quantity": 85.9701, "price": 126.59},
-    {"symbol": "AAPL", "name": "Apple", "quantity": 54.4092, "price": 314.97},
-    {"symbol": "PFE", "name": "Pfizer", "quantity": 527.9008, "price": 24.22},
-    {"symbol": "PEP", "name": "PepsiCo", "quantity": 12.3842, "price": 137.4},
-    {"symbol": "MSTR", "name": "Strategy", "quantity": 30.0119, "price": 94.89},
-    {"symbol": "PG", "name": "Procter & Gamble", "quantity": 11.5941, "price": 147.05},
-    {"symbol": "JNJ", "name": "Johnson & Johnson", "quantity": 64.8509, "price": 256.6},
-    {"symbol": "AVGO", "name": "Broadcom", "quantity": 20.1312, "price": 400.39},
-    {"symbol": "VZ", "name": "Verizon", "quantity": 46.3337, "price": 42.15},
-    {"symbol": "XOM", "name": "ExxonMobil", "quantity": 52.6972, "price": 138.8},
-    {"symbol": "AMD", "name": "AMD", "quantity": 81.7068, "price": 559.77},
-    {"symbol": "BLK", "name": "BlackRock", "quantity": 90.0917, "price": 1036},
-    {"symbol": "V", "name": "Visa", "quantity": 0.9189, "price": 349.13},
-    {"symbol": "MA", "name": "Mastercard", "quantity": 0.5303, "price": 526.12},
-    {"symbol": "GOOGL", "name": "Alphabet", "quantity": 91.0928, "price": 357.17},
-    {"symbol": "VICI", "name": "VICI Properties", "quantity": 4.4521, "price": 26.01},
-    {"symbol": "ABBV", "name": "AbbVie", "quantity": 10.8022, "price": 249.9},
-    {"symbol": "BAC", "name": "Bank of America", "quantity": 62.2532, "price": 59.66},
-    {"symbol": "QCOM", "name": "Qualcomm", "quantity": 60.8224, "price": 188.9}
+    {"isin": "US88160R1014", "symbol": "TSLA",  "name": "Tesla",                         "quantity": 1.77834002, "price": 407.59},
+    {"isin": "US0231351067", "symbol": "AMZN",  "name": "Amazon",                        "quantity": 2.75130172, "price": 245.74},
+    {"isin": "US5949181045", "symbol": "MSFT",  "name": "Microsoft",                     "quantity": 1.21883566, "price": 385.34},
+    {"isin": "US67066G1040", "symbol": "NVDA",  "name": "NVIDIA",                        "quantity": 7.77317395, "price": 210.57},
+    {"isin": "US1912161007", "symbol": "KO",    "name": "Coca-Cola",                     "quantity": 8.61417833, "price": 83.45},
+    {"isin": "US1667641005", "symbol": "CVX",   "name": "Chevron",                       "quantity": 3.20399071, "price": 176.16},
+    {"isin": "US46625H1005", "symbol": "JPM",   "name": "JPMorgan Chase",                "quantity": 3.85943752, "price": 336.88},
+    {"isin": "US30303M1027", "symbol": "META",  "name": "Meta",                          "quantity": 0.75419097, "price": 668},
+    {"isin": "US69608A1088", "symbol": "PLTR",  "name": "Palantir",                      "quantity": 5.97014166, "price": 126.59},
+    {"isin": "US0378331005", "symbol": "AAPL",  "name": "Apple",                         "quantity": 4.40920169, "price": 314.97},
+    {"isin": "US7170811035", "symbol": "PFE",   "name": "Pfizer",                        "quantity": 27.90076202,"price": 24.22},
+    {"isin": "US7134481081", "symbol": "PEP",   "name": "PepsiCo",                       "quantity": 2.38419108, "price": 137.4},
+    {"isin": "US5949724083", "symbol": "MSTR",  "name": "Strategy",                      "quantity": 0.01191,    "price": 94.89},
+    {"isin": "US7427181091", "symbol": "PG",    "name": "Procter & Gamble",              "quantity": 1.59406827, "price": 147.05},
+    {"isin": "US4781601046", "symbol": "JNJ",   "name": "Johnson & Johnson",             "quantity": 4.85085379, "price": 256.6},
+    {"isin": "US11135F1012", "symbol": "AVGO",  "name": "Broadcom",                      "quantity": 0.13123632, "price": 400.39},
+    {"isin": "US92343V1044", "symbol": "VZ",    "name": "Verizon",                       "quantity": 6.3336864,  "price": 42.15},
+    {"isin": "US30233Q1085", "symbol": "XOM",   "name": "ExxonMobil",                    "quantity": 2.69717092, "price": 138.8},
+    {"isin": "US0079031078", "symbol": "AMD",   "name": "AMD",                           "quantity": 1.70679677, "price": 559.77},
+    {"isin": "US09290D1019", "symbol": "BLK",   "name": "BlackRock",                     "quantity": 0.09171826, "price": 1036},
+    {"isin": "US92826C8394", "symbol": "V",     "name": "Visa",                          "quantity": 0.9188928,  "price": 349.13},
+    {"isin": "US57636Q1040", "symbol": "MA",    "name": "Mastercard",                    "quantity": 0.53027754, "price": 526.12},
+    {"isin": "US02079K3059", "symbol": "GOOGL", "name": "Alphabet",                      "quantity": 1.09276209, "price": 357.17},
+    {"isin": "US9256521090", "symbol": "VICI",  "name": "VICI Properties",               "quantity": 4.45206682, "price": 26.01},
+    {"isin": "US00287Y1091", "symbol": "ABBV",  "name": "AbbVie",                        "quantity": 0.80222733, "price": 249.9},
+    {"isin": "US0605051046", "symbol": "BAC",   "name": "Bank of America",               "quantity": 2.2532337,  "price": 59.66},
+    {"isin": "US7475251036", "symbol": "QCOM",  "name": "Qualcomm",                      "quantity": 0.82236603, "price": 188.9},
 ]
 
-# Crypto holdings (9)
+# Crypto holdings — nämä ovat ulkoisilla vaihdoilla / DCA-suunnitelmassa,
+# EIVÄT Trading 212 -tilillä (T212 Crypto -tili on tällä hetkellä tyhjä,
+# Holdings value: 0.00 EUR, vahvistettu 10.07.2026 confirmation-of-holdings-asiakirjassa)
 CRYPTO_HOLDINGS = [
     {"symbol": "bitcoin", "name": "BTC", "quantity": 0.00674376, "value_eur": 379.43},
     {"symbol": "ethereum", "name": "ETH", "quantity": 0.36953452, "value_eur": 587.15},
@@ -131,7 +123,7 @@ CRYPTO_HOLDINGS = [
     {"symbol": "sui", "name": "SUI", "quantity": 51.96174103, "value_eur": 33.73},
     {"symbol": "stellar", "name": "XLM", "quantity": 197.60613615, "value_eur": 33.04},
     {"symbol": "cardano", "name": "ADA", "quantity": 206.73380095, "value_eur": 30.70},
-    {"symbol": "chainlink", "name": "LINK", "quantity": 3.40208837, "value_eur": 23.86}
+    {"symbol": "chainlink", "name": "LINK", "quantity": 3.40208837, "value_eur": 23.86},
 ]
 
 # DCA ja Trading 212
@@ -147,128 +139,30 @@ TRADING212_PLAN = {
     "name": "Aydaruus Ahmed Wehliye",
     "amount_eur": 450,
     "day": 10,
-    "holdings": 39,
+    "holdings": len(ETF_HOLDINGS) + len(STOCK_HOLDINGS),
     "next_trade": "2026-08-10",
-    "total_value": 27562.45,
-    "profit": 2946.77,
-    "profit_percent": 11.97
+    "total_value": 33239.07,   # Trading 212 Invest -tilin arvo, PDF 10.07.2026
 }
 
 # Perheen holdings – isä mukana
 FAMILY_HOLDINGS = [
-    {"name": "👨 Aydaruus Ahmed Wehliye (Isä)", "holdings": 39, "value": 27562.45, "profit": 2946.77, "profit_percent": 11.97},
+    {"name": "👨 Aydaruus Ahmed Wehliye (Isä)", "holdings": TRADING212_PLAN["holdings"], "value": 33239.07},
     {"name": "Ismahaan Aydaurus", "holdings": 20, "value": 1184.98, "profit": 178.95, "profit_percent": 17.79},
     {"name": "Ilyaas Aydaurus", "holdings": 26, "value": 1181.39, "profit": 182.23, "profit_percent": 18.25},
     {"name": "Farhia Aydaurus", "holdings": 18, "value": 1180.87, "profit": 179.94, "profit_percent": 17.98},
     {"name": "Mahamed Aydaurus", "holdings": 19, "value": 1177.03, "profit": 156.81, "profit_percent": 15.38},
-    {"name": "Yahye Aydaurus", "holdings": 25, "value": 966.85, "profit": 128.01, "profit_percent": 15.27}
+    {"name": "Yahye Aydaurus", "holdings": 25, "value": 966.85, "profit": 128.01, "profit_percent": 15.27},
 ]
 
-TOTAL_INVESTMENTS = 33253.64
+TOTAL_INVESTMENTS = TRADING212_PLAN["total_value"]  # 33 239.07 EUR (Trading 212 Invest, PDF 10.07.2026)
 TOTAL_CRYPTO = sum(c["value_eur"] for c in CRYPTO_HOLDINGS)
 
-# =============================================
-# 5. TRADING 212 API -TOIMINNOT
-# =============================================
-
-def t212_api_request(endpoint, method="GET", data=None):
-    """Tee Trading 212 API -pyyntö"""
-    if not T212_API_KEY or not T212_API_SECRET:
-        logging.error("Trading 212 API -avaimet puuttuvat")
-        return None
-    
-    base_url = "https://api.trading212.com/v1"
-    url = f"{base_url}/{endpoint.lstrip('/')}"
-    
-    headers = {
-        "Authorization": f"Bearer {T212_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    try:
-        if method == "GET":
-            response = requests.get(url, headers=headers, timeout=15)
-        elif method == "POST":
-            response = requests.post(url, headers=headers, json=data, timeout=15)
-        else:
-            return None
-        
-        if response.status_code == 200:
-            return response.json()
-        else:
-            logging.error(f"T212 API error: {response.status_code} - {response.text}")
-            return None
-    except Exception as e:
-        logging.error(f"T212 API request failed: {e}")
-        return None
-
-def get_upcoming_dividends_t212():
-    """
-    Hakee tulevat osingot Trading 212 API:sta.
-    """
-    if not T212_API_KEY or not T212_API_SECRET:
-        logging.warning("Trading 212 API -avaimia ei ole asetettu")
-        return [], 0
-    
-    try:
-        # Yritetään hakea tulevat osingot
-        data = t212_api_request("dividends/upcoming")
-        if data is None:
-            logging.warning("API ei palauttanut tulevia osinkoja")
-            return [], 0
-        
-        upcoming = []
-        total = 0.0
-        for item in data:
-            # Oletetaan, että API palauttaa listan, jossa on ainakin:
-            # ticker, name, amount, exDate, payDate
-            symbol = item.get("ticker") or item.get("symbol")
-            name = item.get("name") or item.get("instrumentName")
-            amount = item.get("amount") or item.get("dividendAmount") or 0
-            ex_date = item.get("exDate") or item.get("exDividendDate")
-            pay_date = item.get("payDate") or item.get("paymentDate")
-            
-            if not symbol or not name or not amount:
-                continue
-            
-            total += amount
-            
-            # Muunna päivämäärät
-            if ex_date:
-                try:
-                    ex_date = datetime.fromisoformat(ex_date.replace('Z', '+00:00')).strftime('%d.%m.%Y')
-                except:
-                    ex_date = "Tuntematon"
-            else:
-                ex_date = "Tuntematon"
-            
-            if pay_date:
-                try:
-                    pay_date = datetime.fromisoformat(pay_date.replace('Z', '+00:00')).strftime('%d.%m.%Y')
-                except:
-                    pay_date = "Tuntematon"
-            else:
-                pay_date = "Tuntematon"
-            
-            upcoming.append({
-                "symbol": symbol,
-                "name": name,
-                "amount": round(amount, 2),
-                "ex_date": ex_date,
-                "payout_date": pay_date,
-                "dividend_per_share": round(amount / (item.get("quantity") or 1), 4)
-            })
-        
-        # Järjestä maksupäivän mukaan
-        upcoming.sort(key=lambda x: x['payout_date'])
-        return upcoming, round(total, 2)
-        
-    except Exception as e:
-        logging.error(f"Virhe haettaessa tulevia osinkoja API:sta: {e}")
-        return [], 0
+# Nopea haku: ISIN -> nykyinen omistusmäärä (käytetään osinkolaskennassa)
+CURRENT_QTY_BY_ISIN = {h["isin"]: h["quantity"] for h in ETF_HOLDINGS}
+CURRENT_QTY_BY_ISIN.update({h["isin"]: h["quantity"] for h in STOCK_HOLDINGS})
 
 # =============================================
-# 6. API-FUNKTIOIT (EUR)
+# 5. HINTA-APIT (EUR)
 # =============================================
 
 def get_crypto_price(symbol):
@@ -279,7 +173,6 @@ def get_crypto_price(symbol):
     }
     sym = symbol_map.get(symbol, symbol.upper())
 
-    # Kraken
     try:
         url = f"https://api.kraken.com/0/public/Ticker?pair={sym}EUR"
         r = requests.get(url, timeout=10)
@@ -292,7 +185,6 @@ def get_crypto_price(symbol):
     except Exception as e:
         logging.warning(f"Kraken error {symbol}: {e}")
 
-    # KuCoin
     try:
         url = f"https://api.kucoin.com/api/v1/market/orderbook/level1?symbol={sym}-EUR"
         r = requests.get(url, timeout=10)
@@ -303,7 +195,6 @@ def get_crypto_price(symbol):
     except Exception as e:
         logging.warning(f"KuCoin error {symbol}: {e}")
 
-    # CoinGecko
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=eur"
@@ -342,7 +233,7 @@ def get_etf_price(symbol):
     return get_stock_price(symbol)
 
 # =============================================
-# 7. HISTORIALLISET HINNAT (30 päivää)
+# 6. HISTORIALLISET HINNAT (30 päivää) — /recommend -komentoa varten
 # =============================================
 
 def get_stock_historical(symbol, days=30):
@@ -380,45 +271,127 @@ def get_recommendation(current_price, old_price, name):
         return "🟡 HOLD", f"{change:+.1f}% (neutraali)"
 
 # =============================================
-# 8. OSINGOT – LUE CSV:STÄ (TODELLISET MENNEET)
+# 7. OSINGOT — LUE CSV:STÄ (TODELLISET, TRADING 212 -TILIOTE)
 # =============================================
+# CSV-tiedoston sarakkeet (Trading 212 -vienti):
+# Action, Time, ISIN, Ticker, Name, No. of shares, Price / share,
+# Currency (Price / share), Exchange rate, Total, Currency (Total),
+# Withholding tax, Currency (Withholding tax)
+
+DIVIDENDS_CSV_PATH = "dividends.csv"
+
+def _load_dividends_dataframe():
+    df = pd.read_csv(DIVIDENDS_CSV_PATH)
+    df = df[df['Action'] == 'Dividend (Dividend)'].copy()
+    df['Total'] = df['Total'].astype(str).str.replace(',', '.').astype(float)
+    df['Shares'] = df['No. of shares'].astype(str).str.replace(',', '.').astype(float)
+    df['PerShare'] = df['Price / share'].astype(str).str.replace(',', '.').astype(float)
+    df['Tax'] = df['Withholding tax'].astype(str).str.replace(',', '.').fillna('0').astype(float)
+    df['Date'] = df['Time'].apply(lambda t: datetime.strptime(str(t).split(' ')[0], '%Y-%m-%d'))
+    return df.sort_values('Date')
 
 def get_dividend_details():
-    """Lukee todelliset osingot dividends.csv-tiedostosta"""
-    dividend_list = []
-    total_yearly = 0.0
-    
+    """Palauttaa listan yksittäisistä osinkomaksuista (kuka maksoi, milloin, kuinka paljon)
+    sekä koko ajanjakson yhteissumman, lukien dividends.csv:stä."""
     try:
-        df = pd.read_csv('dividends.csv')
-        df = df[df['Action'] == 'Dividend (Dividend)']
-        
-        for _, row in df.iterrows():
-            total = float(str(row['Total']).replace(',', '.'))
-            total_yearly += total
-            
-            date_str = row['Time'].split(' ')[0]
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-            date_formatted = date_obj.strftime('%d.%m.%Y')
-            
-            tax = float(str(row['Withholding tax']).replace(',', '.')) if row['Withholding tax'] else 0
-            
-            dividend_list.append({
-                "date": date_formatted,
-                "symbol": row['Ticker'],
-                "name": row['Name'],
-                "amount": total,
-                "quantity": float(row['No. of shares']),
-                "price": float(row['Price / share']),
-                "tax": tax
-            })
-        
-        dividend_list.sort(key=lambda x: x['date'], reverse=True)
-        
+        df = _load_dividends_dataframe()
     except Exception as e:
         logging.error(f"Virhe luettaessa CSV: {e}")
-        return [], 0
-    
-    return dividend_list, round(total_yearly, 2)
+        return [], 0.0
+
+    dividend_list = []
+    for _, row in df.iterrows():
+        dividend_list.append({
+            "date": row['Date'].strftime('%d.%m.%Y'),
+            "date_sort": row['Date'],
+            "isin": row['ISIN'],
+            "symbol": row['Ticker'],
+            "name": row['Name'],
+            "amount": round(row['Total'], 2),
+            "quantity": row['Shares'],
+            "per_share": round(row['PerShare'], 4),
+            "currency": row.get('Currency (Price / share)', ''),
+            "tax": round(row['Tax'], 2),
+        })
+
+    dividend_list.sort(key=lambda x: x['date_sort'], reverse=True)
+    total = round(sum(d['amount'] for d in dividend_list), 2)
+    return dividend_list, total
+
+def get_dividends_by_month(dividend_list):
+    """Ryhmittelee osingot kuukausittain (avain 'MM/YYYY') ja palauttaa
+    (monthly_dict, yearly_total)."""
+    monthly = {}
+    for d in dividend_list:
+        key = d['date_sort'].strftime('%m/%Y')
+        monthly[key] = monthly.get(key, 0.0) + d['amount']
+    monthly = {k: round(v, 2) for k, v in monthly.items()}
+    yearly_total = round(sum(monthly.values()), 2)
+    return monthly, yearly_total
+
+# =============================================
+# 8. TULEVAT OSINGOT — ARVIO CSV-HISTORIAN PERUSTEELLA
+# =============================================
+# Trading 212:n API:ssa ei ole "tulevat osingot" -endpointtia (vain
+# toteutuneet maksut), joten tulevat osingot arvioidaan CSV-historian
+# maksuvälin ja viimeisimmän €/osake-summan perusteella, kerrottuna
+# NYKYISELLÄ omistusmäärällä (Confirmation of holdings -asiakirjasta).
+
+def get_upcoming_dividends_estimated(horizon_days=365):
+    try:
+        df = _load_dividends_dataframe()
+    except Exception as e:
+        logging.error(f"Virhe CSV:n luvussa (upcoming-arvio): {e}")
+        return [], {}, 0.0
+
+    projected = []
+    today = datetime.now()
+    horizon = today + timedelta(days=horizon_days)
+
+    for isin, group in df.groupby('ISIN'):
+        group = group.sort_values('Date')
+        if len(group) < 2:
+            continue  # ei tarpeeksi historiaa maksuvälin päättelyyn
+
+        qty = CURRENT_QTY_BY_ISIN.get(isin)
+        if not qty:
+            continue  # ei enää (tai ei koskaan) salkussa
+
+        name = group.iloc[-1]['Name']
+        ticker = group.iloc[-1]['Ticker']
+        dates = group['Date'].tolist()
+        intervals = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
+        avg_interval = sum(intervals) / len(intervals)
+
+        last_row = group.iloc[-1]
+        last_per_share = last_row['PerShare']
+        next_date = dates[-1] + timedelta(days=avg_interval)
+
+        while next_date <= horizon:
+            if next_date >= today:
+                projected.append({
+                    "isin": isin,
+                    "symbol": ticker,
+                    "name": name,
+                    "amount": round(last_per_share * qty, 2),
+                    "per_share": round(last_per_share, 4),
+                    "date": next_date.strftime('%d.%m.%Y'),
+                    "date_sort": next_date,
+                    "frequency_days": round(avg_interval),
+                })
+            next_date += timedelta(days=avg_interval)
+
+    projected.sort(key=lambda x: x['date_sort'])
+
+    monthly = {}
+    yearly_total = 0.0
+    for div in projected:
+        key = div['date_sort'].strftime('%m/%Y')
+        monthly[key] = monthly.get(key, 0.0) + div['amount']
+        yearly_total += div['amount']
+    monthly = {k: round(v, 2) for k, v in monthly.items()}
+
+    return projected, monthly, round(yearly_total, 2)
 
 # =============================================
 # 9. TAVOITE (100k)
@@ -429,13 +402,13 @@ def calculate_goal(current_value, monthly_savings, yearly_return_pct=0.07):
     remaining = target - current_value
     if remaining <= 0:
         return 0, datetime.now()
-    monthly_return = (1 + yearly_return_pct) ** (1/12) - 1
+    monthly_return = (1 + yearly_return_pct) ** (1 / 12) - 1
     months = 0
     value = current_value
     while value < target and months < 600:
         value = value * (1 + monthly_return) + monthly_savings
         months += 1
-    return months, datetime.now() + timedelta(days=months*30)
+    return months, datetime.now() + timedelta(days=months * 30)
 
 # =============================================
 # 10. UUTISET
@@ -502,31 +475,17 @@ async def send_daily_report():
     msg += f"🪙 Crypto holdings: €{TOTAL_CRYPTO:,.2f}\n\n"
 
     msg += "🪙 *Crypto qiimaha hadda:*\n"
-    if btc: msg += f"₿ BTC: €{btc:,.0f}\n"
-    else: msg += "₿ BTC: Laga ma helin\n"
-    if eth: msg += f"⟠ ETH: €{eth:,.0f}\n"
-    else: msg += "⟠ ETH: Laga ma helin\n"
-    if sol: msg += f"◎ SOL: €{sol:,.0f}\n"
-    else: msg += "◎ SOL: Laga ma helin\n"
-    if xrp: msg += f"✕ XRP: €{xrp:,.0f}\n"
-    else: msg += "✕ XRP: Laga ma helin\n"
-    if bnb: msg += f"⬡ BNB: €{bnb:,.0f}\n"
-    else: msg += "⬡ BNB: Laga ma helin\n"
-    if sui: msg += f"🔷 SUI: €{sui:,.2f}\n"
-    else: msg += "🔷 SUI: Laga ma helin\n"
-    if xlm: msg += f"⭐ XLM: €{xlm:,.2f}\n"
-    else: msg += "⭐ XLM: Laga ma helin\n"
-    if ada: msg += f"🟣 ADA: €{ada:,.2f}\n"
-    else: msg += "🟣 ADA: Laga ma helin\n"
-    if link: msg += f"🔗 LINK: €{link:,.2f}\n"
-    else: msg += "🔗 LINK: Laga ma helin\n"
+    for label, val in [("₿ BTC", btc), ("⟠ ETH", eth), ("◎ SOL", sol), ("✕ XRP", xrp),
+                        ("⬡ BNB", bnb), ("🔷 SUI", sui), ("⭐ XLM", xlm),
+                        ("🟣 ADA", ada), ("🔗 LINK", link)]:
+        msg += f"{label}: €{val:,.2f}\n" if val else f"{label}: Laga ma helin\n"
 
     _, total_div = get_dividend_details()
     months, target_date = calculate_goal(TOTAL_INVESTMENTS, TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur'])
     msg += f"\n🎯 *100k € tavoite*\n"
     msg += f"📈 Puuttuu: €{100000 - TOTAL_INVESTMENTS:,.2f}\n"
     msg += f"📅 Arvio: {target_date.strftime('%d.%m.%Y')} ({months} kk)\n"
-    msg += f"💵 Osingot/v (todelliset): €{total_div:,.2f}\n"
+    msg += f"💵 Osingot (12 kk, todelliset): €{total_div:,.2f}\n"
 
     today = datetime.now()
     if today.day == 10:
@@ -551,7 +510,7 @@ scheduler.add_job(send_daily_report, 'cron', hour=9, minute=0, id="daily_report"
 scheduler.start()
 
 # =============================================
-# 13. TELEGRAM KOMENNOT
+# 13. TELEGRAM KOMENNOT — PERUS
 # =============================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -580,8 +539,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/testapi - Tijaabi API-yada\n"
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
-        "/dividends - Menneet osingot (TODELLISET)\n"
-        "/upcoming - Tulevat osingot (Trading 212 API)\n"
+        "/dividends - Menneet osingot (TODELLISET, kk+vuosi)\n"
+        "/upcoming - Tulevat osingot (arvio historiasta)\n"
         "/recommend - Sijoitusanalyysi & suositukset\n\n"
         "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin!",
         parse_mode="Markdown"
@@ -605,8 +564,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/testapi - Tijaabi API-yada\n"
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
-        "/dividends - Menneet osingot (TODELLISET)\n"
-        "/upcoming - Tulevat osingot (Trading 212 API)\n"
+        "/dividends - Menneet osingot (TODELLISET, kk+vuosi)\n"
+        "/upcoming - Tulevat osingot (arvio historiasta)\n"
         "/recommend - Sijoitusanalyysi & suositukset\n\n"
         "💰 *DCA:* €100/bil (crypto) + €450/kk (Trading 212)\n"
         "📊 *Warbixin maalinle:* 9:00 subax",
@@ -621,40 +580,19 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         count = c.fetchone()[0]
         conn.close()
         await update.message.reply_text(f"👥 Botti waxaa isticmaalay {count} qof.")
-    except Exception as e:
+    except Exception:
         await update.message.reply_text("⚠️ Kuma heli karo tirokoobka.")
 
 async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    btc = get_btc_price()
-    eth = get_eth_price()
-    sol = get_sol_price()
-    xrp = get_xrp_price()
-    bnb = get_bnb_price()
-    sui = get_sui_price()
-    xlm = get_xlm_price()
-    ada = get_ada_price()
-    link = get_link_price()
+    btc = get_btc_price(); eth = get_eth_price(); sol = get_sol_price()
+    xrp = get_xrp_price(); bnb = get_bnb_price(); sui = get_sui_price()
+    xlm = get_xlm_price(); ada = get_ada_price(); link = get_link_price()
 
-    msg = "📊 *Warbixin degdeg ah*\n━━━━━━━━━━━━━━━━━\n\n"
-    msg += "🪙 *Crypto qiimaha hadda:*\n"
-    if btc: msg += f"₿ BTC: €{btc:,.0f}\n"
-    else: msg += "₿ BTC: Laga ma helin\n"
-    if eth: msg += f"⟠ ETH: €{eth:,.0f}\n"
-    else: msg += "⟠ ETH: Laga ma helin\n"
-    if sol: msg += f"◎ SOL: €{sol:,.0f}\n"
-    else: msg += "◎ SOL: Laga ma helin\n"
-    if xrp: msg += f"✕ XRP: €{xrp:,.0f}\n"
-    else: msg += "✕ XRP: Laga ma helin\n"
-    if bnb: msg += f"⬡ BNB: €{bnb:,.0f}\n"
-    else: msg += "⬡ BNB: Laga ma helin\n"
-    if sui: msg += f"🔷 SUI: €{sui:,.2f}\n"
-    else: msg += "🔷 SUI: Laga ma helin\n"
-    if xlm: msg += f"⭐ XLM: €{xlm:,.2f}\n"
-    else: msg += "⭐ XLM: Laga ma helin\n"
-    if ada: msg += f"🟣 ADA: €{ada:,.2f}\n"
-    else: msg += "🟣 ADA: Laga ma helin\n"
-    if link: msg += f"🔗 LINK: €{link:,.2f}\n"
-    else: msg += "🔗 LINK: Laga ma helin\n"
+    msg = "📊 *Warbixin degdeg ah*\n━━━━━━━━━━━━━━━━━\n\n🪙 *Crypto qiimaha hadda:*\n"
+    for label, val in [("₿ BTC", btc), ("⟠ ETH", eth), ("◎ SOL", sol), ("✕ XRP", xrp),
+                        ("⬡ BNB", bnb), ("🔷 SUI", sui), ("⭐ XLM", xlm),
+                        ("🟣 ADA", ada), ("🔗 LINK", link)]:
+        msg += f"{label}: €{val:,.2f}\n" if val else f"{label}: Laga ma helin\n"
 
     msg += f"\n💰 *Crypto holdings:* €{TOTAL_CRYPTO:,.2f}\n"
     msg += f"💵 *Wadarta guud:* €{TOTAL_INVESTMENTS:,.2f}"
@@ -666,8 +604,8 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📊 *Portfolio-gaaga*\n━━━━━━━━━━━━━━━━━\n\n"
-    msg += f"💰 *Wadarta guud:* €{TOTAL_INVESTMENTS:,.2f}\n"
-    msg += f"🪙 *Crypto holdings:* €{TOTAL_CRYPTO:,.2f}\n\n"
+    msg += f"💰 *Wadarta guud (T212 Invest):* €{TOTAL_INVESTMENTS:,.2f}\n"
+    msg += f"🪙 *Crypto holdings (ulkoinen):* €{TOTAL_CRYPTO:,.2f}\n\n"
     msg += f"📈 *ETF holdings:* {len(ETF_HOLDINGS)} holdings\n"
     msg += f"📈 *Stock holdings:* {len(STOCK_HOLDINGS)} holdings\n"
     msg += f"🪙 *Crypto holdings:* {len(CRYPTO_HOLDINGS)} holdings\n\n"
@@ -675,13 +613,12 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg += f"📊 *Trading 212 -kuukausisijoitus*\n"
     msg += f"👤 *{TRADING212_PLAN['name']}*\n"
     msg += f"💰 €{TRADING212_PLAN['amount_eur']}/kk (10. päivä)\n"
-    msg += f"📈 Dream: {TRADING212_PLAN['holdings']} holdingia\n"
-    msg += f"💵 Arvo: €{TRADING212_PLAN['total_value']:,.2f}\n"
-    msg += f"📈 Voitto: +{TRADING212_PLAN['profit_percent']:.2f}%\n\n"
+    msg += f"📈 Holdings: {TRADING212_PLAN['holdings']} kpl\n"
+    msg += f"💵 Arvo: €{TRADING212_PLAN['total_value']:,.2f}\n\n"
 
     msg += "👨‍👩‍👧‍👦 *Perheen holdings*\n"
     for member in FAMILY_HOLDINGS:
-        msg += f"• {member['name']}: {member['holdings']} hold. = €{member['value']:,.2f} (+{member['profit_percent']:.2f}%)\n"
+        msg += f"• {member['name']}: {member['holdings']} hold. = €{member['value']:,.2f}\n"
 
     msg += f"\n📌 *DCA qorshaha:* {DCA_PLAN['name']}\n"
     msg += f"💰 €{DCA_PLAN['amount_eur']}/bil (10-da bil)\n"
@@ -694,7 +631,7 @@ async def etfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for etf in ETF_HOLDINGS:
         value = etf["quantity"] * etf["price"]
         total += value
-        msg += f"{etf['name'][:25]}: {etf['quantity']:.2f} x €{etf['price']:,.2f} = €{value:,.2f}\n"
+        msg += f"{etf['name'][:30]}: {etf['quantity']:.4f} x €{etf['price']:,.2f} = €{value:,.2f}\n"
     msg += f"\n💰 *Wadarta ETF:* €{total:,.2f}"
     await update.message.reply_text(msg)
 
@@ -704,24 +641,23 @@ async def stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for stock in STOCK_HOLDINGS:
         value = stock["quantity"] * stock["price"]
         total += value
-        msg += f"{stock['name'][:25]}: {stock['quantity']:.2f} x ${stock['price']:,.2f} = ${value:,.2f}\n"
+        msg += f"{stock['name'][:25]}: {stock['quantity']:.4f} x ${stock['price']:,.2f} = ${value:,.2f}\n"
     msg += f"\n💰 *Wadarta Stocks:* ${total:,.2f}"
     await update.message.reply_text(msg)
 
 async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "🪙 *Crypto Holdings*\n━━━━━━━━━━━━━━━━━\n\n"
     total = 0
-    for crypto in CRYPTO_HOLDINGS:
-        total += crypto["value_eur"]
-        msg += f"{crypto['name']}: {crypto['quantity']:.4f} = €{crypto['value_eur']:,.2f}\n"
+    for c in CRYPTO_HOLDINGS:
+        total += c["value_eur"]
+        msg += f"{c['name']}: {c['quantity']:.8f} = €{c['value_eur']:,.2f}\n"
     msg += f"\n💰 *Wadarta Crypto:* €{total:,.2f}"
     await update.message.reply_text(msg)
 
 async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "🧪 *Tijaabo API (EUR)*\n\n"
     try:
-        url = "https://api.kraken.com/0/public/Ticker?pair=BTCEUR"
-        r = requests.get(url, timeout=10)
+        r = requests.get("https://api.kraken.com/0/public/Ticker?pair=BTCEUR", timeout=10)
         if r.status_code == 200:
             data = r.json()
             if data.get("result"):
@@ -734,8 +670,7 @@ async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         msg += f"❌ Kraken error: {e}\n"
     try:
-        url = "https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=BTC-EUR"
-        r = requests.get(url, timeout=10)
+        r = requests.get("https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=BTC-EUR", timeout=10)
         if r.status_code == 200:
             data = r.json()
             if data.get("data") and "price" in data["data"]:
@@ -745,9 +680,8 @@ async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         msg += f"❌ KuCoin error: {e}\n"
     try:
-        url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        r = requests.get(url, timeout=10, headers=headers)
+        r = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur", timeout=10, headers=headers)
         if r.status_code == 200:
             data = r.json()
             if "bitcoin" in data and "eur" in data["bitcoin"]:
@@ -763,109 +697,105 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     months, target_date = calculate_goal(TOTAL_INVESTMENTS, monthly_savings)
     remaining = 100000 - TOTAL_INVESTMENTS
 
-    msg = "🎯 *Tavoite: 100 000 €*\n"
-    msg += "━━━━━━━━━━━━━━━━━\n\n"
+    msg = "🎯 *Tavoite: 100 000 €*\n━━━━━━━━━━━━━━━━━\n\n"
     msg += f"💰 Nykyinen: €{TOTAL_INVESTMENTS:,.2f}\n"
     msg += f"📈 Puuttuu: €{remaining:,.2f}\n"
     msg += f"📅 Arvioitu saavutus: {target_date.strftime('%d.%m.%Y')} ({months} kk)\n"
     msg += f"📊 Kuukausisäästö: €{monthly_savings:,.0f} (Trading212 + crypto DCA)"
-    
+
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
-# 14. MENNEET OSINGOT (CSV)
+# 14. MENNEET OSINGOT — kuka maksoi, milloin, kuinka paljon
+#     + kuukausittain + koko vuosi
 # =============================================
 async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        dividend_list, total_yearly = get_dividend_details()
+        dividend_list, total_all_time = get_dividend_details()
 
         if not dividend_list:
-            await update.message.reply_text("⚠️ Osinkotietoja ei löytynyt. Varmista, että dividends.csv on tallennettu.")
+            await update.message.reply_text(
+                "⚠️ Osinkotietoja ei löytynyt. Varmista, että dividends.csv on tallennettu botin hakemistoon."
+            )
             return
 
-        max_per_msg = 15
-        total_items = len(dividend_list)
-        sent_count = 0
+        monthly, yearly_total = get_dividends_by_month(dividend_list)
 
-        while sent_count < total_items:
-            chunk = dividend_list[sent_count:sent_count + max_per_msg]
-            sent_count += len(chunk)
+        max_per_msg = 12
+        sent = 0
+        total_items = len(dividend_list)
+
+        while sent < total_items:
+            chunk = dividend_list[sent:sent + max_per_msg]
+            sent += len(chunk)
 
             msg = "💰 *Menneet osinkomaksut (Trading 212)*\n"
             msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
             for div in chunk:
-                msg += f"📅 *{div['date']}*\n"
-                msg += f"🔹 *{div['name']}* ({div['symbol']})\n"
-                msg += f"   📦 {div['quantity']:.2f} × €{div['price']:.4f} = *€{div['amount']:,.2f}*\n"
+                msg += f"📅 *{div['date']}* — 💰 *€{div['amount']:,.2f}*\n"
+                msg += f"   🔹 Maksaja: *{div['name']}* ({div['symbol']})\n"
+                msg += f"   📦 {div['quantity']:.4f} kpl × {div['per_share']:.4f} {div['currency']}/osake\n"
                 if div['tax'] > 0:
                     msg += f"   🏦 Lähdevero: €{div['tax']:.2f}\n"
                 msg += "\n"
 
-            if sent_count >= total_items:
-                msg += f"📊 *Osinkoja yhteensä (12 kk):* €{total_yearly:,.2f}"
-                msg += "\nℹ️ *Lähde:* Trading 212 -osinkohistoria"
+            if sent >= total_items:
+                msg += "━━━━━━━━━━━━━━━━━━━━━━\n"
+                msg += "📊 *Osingot kuukausittain:*\n"
+                for month in sorted(monthly.keys(), key=lambda m: datetime.strptime(m, '%m/%Y')):
+                    msg += f"   📅 {month}: €{monthly[month]:,.2f}\n"
+                msg += f"\n💰 *Osingot yhteensä (koko ajanjakso):* €{total_all_time:,.2f}"
+                msg += "\nℹ️ *Lähde:* Trading 212 -osinkohistoria (dividends.csv)"
 
             await update.message.reply_text(msg, parse_mode="Markdown")
 
     except Exception as e:
         logging.error(f"Virhe dividends-komennossa: {e}")
-        await update.message.reply_text(f"⚠️ Virhe haettaessa osinkoja: {str(e)[:100]}")
+        await update.message.reply_text(f"⚠️ Virhe haettaessa osinkoja: {str(e)[:150]}")
 
 # =============================================
-# 15. TULEVAT OSINGOT (TRADING 212 API)
+# 15. TULEVAT OSINGOT — arvio historian perusteella
+#     (kuka maksaa, milloin maksaa, mitä maksaa) + kk + vuosi
 # =============================================
 async def upcoming(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # Jos API-avaimia ei ole, näytä viesti
-        if not T212_API_KEY or not T212_API_SECRET:
+        projected, monthly, yearly_total = get_upcoming_dividends_estimated()
+
+        if not projected:
             await update.message.reply_text(
-                "⚠️ Trading 212 API -avaimia ei ole asetettu.\n\n"
-                "Aseta `T212_API_KEY` ja `T212_API_SECRET` Renderin ympäristömuuttujiin."
+                "⚠️ Tulevia osinkoja ei voitu arvioida.\n"
+                "Varmista, että dividends.csv sisältää vähintään 2 maksua per osake/ETF."
             )
             return
 
-        upcoming_list, total_upcoming = get_upcoming_dividends_t212()
+        max_per_msg = 12
+        sent = 0
+        while sent < len(projected):
+            chunk = projected[sent:sent + max_per_msg]
+            sent += len(chunk)
 
-        if not upcoming_list:
-            await update.message.reply_text("⚠️ Tulevia osinkoja ei löytynyt Trading 212:sta. API ei palauttanut dataa.")
-            return
+            msg = "📅 *ARVIOIDUT TULEVAT OSINGOT*\n"
+            msg += "ℹ️ Perustuu historialliseen maksutahtiin — T212 API ei tue tulevia osinkoja\n"
+            msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-        # Järjestä maksupäivän mukaan
-        upcoming_list.sort(key=lambda x: x['payout_date'])
+            for div in chunk:
+                msg += f"📅 *{div['date']}* — 💰 *€{div['amount']:,.2f}*\n"
+                msg += f"   🔹 Maksaja: *{div['name']}* ({div['symbol']})\n"
+                msg += f"   📈 ~{div['per_share']} €/osake, maksuväli ~{div['frequency_days']} pv\n\n"
 
-        # Ryhmittele kuukausittain
-        monthly = {}
-        yearly_total = 0
-        for div in upcoming_list:
-            month_key = div['payout_date'][3:5] + "/" + div['payout_date'][6:10]
-            if month_key not in monthly:
-                monthly[month_key] = 0
-            monthly[month_key] += div['amount']
-            yearly_total += div['amount']
+            if sent >= len(projected):
+                msg += "━━━━━━━━━━━━━━━━━━━━━━\n"
+                msg += "📊 *Kuukausittain (arvio):*\n"
+                for month in sorted(monthly.keys(), key=lambda m: datetime.strptime(m, '%m/%Y')):
+                    msg += f"   📅 {month}: €{monthly[month]:,.2f}\n"
+                msg += f"\n💰 *Yhteensä seuraavat 12 kk (arvio):* €{yearly_total:,.2f}"
 
-        msg = "📅 *TULEVAT OSINGOT (Trading 212)*\n"
-        msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
-        for div in upcoming_list:
-            msg += f"🔹 *{div['name']}* ({div['symbol']})\n"
-            msg += f"   💰 €{div['amount']:,.2f}\n"
-            msg += f"   📅 Maksupäivä: {div['payout_date']}\n"
-            msg += "\n"
-
-        msg += "━━━━━━━━━━━━━━━━━━━━━━\n"
-        msg += "📊 *Kuukausittain:*\n"
-        for month, total in sorted(monthly.items()):
-            msg += f"   📅 {month}: €{total:,.2f}\n"
-
-        msg += f"\n💰 *Tulevia osinkoja yhteensä:* €{yearly_total:,.2f}"
-        msg += "\n📅 *Lähde:* Trading 212 API"
-
-        await update.message.reply_text(msg, parse_mode="Markdown")
+            await update.message.reply_text(msg, parse_mode="Markdown")
 
     except Exception as e:
         logging.error(f"Virhe upcoming-komennossa: {e}")
-        await update.message.reply_text(f"⚠️ Virhe haettaessa tulevia osinkoja: {str(e)[:100]}")
+        await update.message.reply_text(f"⚠️ Virhe: {str(e)[:150]}")
 
 # =============================================
 # 16. SUOSITUKSET (BUY/HOLD/SELL)
@@ -874,19 +804,12 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📊 *Sijoitusanalyysi & suositukset*\n"
     msg += "━━━━━━━━━━━━━━━━━━━━━━\n"
     msg += "⚡ 30 päivän hinnanmuutokseen perustuen:\n\n"
-    
-    # --- Crypto ---
+
     msg += "🪙 *Kryptot*\n"
     crypto_prices = {
-        "BTC": get_btc_price(),
-        "ETH": get_eth_price(),
-        "SOL": get_sol_price(),
-        "XRP": get_xrp_price(),
-        "BNB": get_bnb_price(),
-        "SUI": get_sui_price(),
-        "XLM": get_xlm_price(),
-        "ADA": get_ada_price(),
-        "LINK": get_link_price()
+        "BTC": get_btc_price(), "ETH": get_eth_price(), "SOL": get_sol_price(),
+        "XRP": get_xrp_price(), "BNB": get_bnb_price(), "SUI": get_sui_price(),
+        "XLM": get_xlm_price(), "ADA": get_ada_price(), "LINK": get_link_price()
     }
     for name, current in crypto_prices.items():
         if current:
@@ -895,58 +818,33 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"{rec} *{name}*: €{current:,.0f} ({detail})\n"
         else:
             msg += f"❌ {name}: Ei hintaa\n"
-    
-    # --- ETF:t ---
+
     msg += "\n📈 *ETF:t*\n"
-    ticker_map = {
-        "iShares Core S&P 500": "SPY",
-        "Vanguard S&P 500": "VOO",
-        "iShares Core MSCI World": "URTH",
-        "Vanguard FTSE All-World": "VWRA",
-        "iShares NASDAQ 100": "QQQ",
-        "SPDR S&P 500": "SPY5",
-        "Vanguard S&P 500": "VUSA",
-        "iShares Core S&P 500 Dist": "IUSA",
-        "iShares NASDAQ 100": "EQQQ",
-        "SPDR S&P 400 Mid Cap": "SPY4",
-        "iShares Core MSCI Europe": "MEUD",
-        "JPMorgan Nasdaq Premium": "JNQ",
-        "JPMorgan US Equity Premium": "JUEQ",
-        "JPMorgan Global Equity Premium": "JGEP",
-        "Vanguard FTSE All-World High Div": "VHYL",
-        "Global X Nasdaq 100 Covered Call": "QYLD",
-        "VanEck Semiconductor": "SMH",
-        "SPDR S&P US Dividend Aristocrats": "UDVD"
-    }
     for etf in ETF_HOLDINGS:
-        ticker = ticker_map.get(etf["name"])
-        if ticker:
-            current = get_etf_price(ticker)
-            if current:
-                old = get_stock_historical(ticker, 30)
-                rec, detail = get_recommendation(current, old, etf["name"])
-                msg += f"{rec} *{etf['name'][:20]}*: ${current:,.2f} ({detail})\n"
-            else:
-                msg += f"❌ {etf['name'][:20]}: Ei hintaa\n"
+        ticker = etf["symbol"]
+        current = get_etf_price(ticker)
+        if current:
+            old = get_stock_historical(ticker, 30)
+            rec, detail = get_recommendation(current, old, etf["name"])
+            msg += f"{rec} *{etf['name'][:22]}*: €{current:,.2f} ({detail})\n"
         else:
-            msg += f"⚠️ {etf['name'][:20]}: Ei tickeriä\n"
-    
-    # --- Osakkeet ---
+            msg += f"❌ {etf['name'][:22]}: Ei hintaa\n"
+
     msg += "\n📊 *Osakkeet*\n"
     for stock in STOCK_HOLDINGS:
         current = get_stock_price(stock["symbol"])
         if current:
             old = get_stock_historical(stock["symbol"], 30)
             rec, detail = get_recommendation(current, old, stock["name"])
-            msg += f"{rec} *{stock['name'][:15]}*: ${current:,.2f} ({detail})\n"
+            msg += f"{rec} *{stock['name'][:18]}*: ${current:,.2f} ({detail})\n"
         else:
-            msg += f"❌ {stock['name'][:15]}: Ei hintaa\n"
-    
+            msg += f"❌ {stock['name'][:18]}: Ei hintaa\n"
+
     msg += "\n💡 *Selitys:*\n"
     msg += "🟢 BUY = hinta laskenut ≥10% (hyvä ostopaikka)\n"
     msg += "🟡 HOLD = hinta muuttunut alle 10%\n"
     msg += "🔴 SELL = hinta noussut ≥10% (hyvä myydä)"
-    
+
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
