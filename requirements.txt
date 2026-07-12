@@ -6,6 +6,6 @@ pandas>=2.0.0
 flask>=3.0.0
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
-TA-Lib
+pandas-ta>=0.3.14b0
 ccxt>=4.0.0
 requests>=2.31.0
