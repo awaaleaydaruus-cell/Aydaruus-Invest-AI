@@ -136,17 +136,20 @@ DCA_PLAN = {
 }
 
 TRADING212_PLAN = {
-    "name": "Aydaruus Ahmed Wehliye",
+    "name": "Dream",
+    "owner": "Aydaruus Ahmed Wehliye",
     "amount_eur": 450,
     "day": 10,
-    "holdings": len(ETF_HOLDINGS) + len(STOCK_HOLDINGS),
+    "holdings": 39,
     "next_trade": "2026-08-10",
-    "total_value": 33239.07,   # Trading 212 Invest -tilin arvo, PDF 10.07.2026
+    "total_value": 27562.45,
+    "profit": 2946.77,
+    "profit_percent": 11.97,
 }
 
-# Perheen holdings – isä mukana
+# Perheen holdings – jokaisella oma pie Trading 212 -sovelluksessa
 FAMILY_HOLDINGS = [
-    {"name": "👨 Aydaruus Ahmed Wehliye (Isä)", "holdings": TRADING212_PLAN["holdings"], "value": 33239.07},
+    {"name": "👨 Aydaruus Ahmed Wehliye (Dream)", "holdings": TRADING212_PLAN["holdings"], "value": TRADING212_PLAN["total_value"], "profit": TRADING212_PLAN["profit"], "profit_percent": TRADING212_PLAN["profit_percent"]},
     {"name": "Ismahaan Aydaurus", "holdings": 20, "value": 1184.98, "profit": 178.95, "profit_percent": 17.79},
     {"name": "Ilyaas Aydaurus", "holdings": 26, "value": 1181.39, "profit": 182.23, "profit_percent": 18.25},
     {"name": "Farhia Aydaurus", "holdings": 18, "value": 1180.87, "profit": 179.94, "profit_percent": 17.98},
@@ -154,7 +157,8 @@ FAMILY_HOLDINGS = [
     {"name": "Yahye Aydaurus", "holdings": 25, "value": 966.85, "profit": 128.01, "profit_percent": 15.27},
 ]
 
-TOTAL_INVESTMENTS = TRADING212_PLAN["total_value"]  # 33 239.07 EUR (Trading 212 Invest, PDF 10.07.2026)
+# Koko tilin arvo (kaikki pie:t + käyttämätön käteinen) — Trading 212 "INVESTMENTS"-näkymä
+TOTAL_INVESTMENTS = 33253.64
 TOTAL_CRYPTO = sum(c["value_eur"] for c in CRYPTO_HOLDINGS)
 
 # Nopea haku: ISIN -> nykyinen omistusmäärä (käytetään osinkolaskennassa)
@@ -337,7 +341,9 @@ def get_dividends_by_month(dividend_list):
 # maksuvälin ja viimeisimmän €/osake-summan perusteella, kerrottuna
 # NYKYISELLÄ omistusmäärällä (Confirmation of holdings -asiakirjasta).
 
-def get_upcoming_dividends_estimated(horizon_days=365):
+def get_upcoming_dividends_estimated(until_date=None):
+    """Arvioi tulevat osingot tähän päivään asti annettuun until_date-päivämäärään saakka.
+    Oletus: kuluvan vuoden loppu (31.12.), jottei lista rönsyile seuraavaan vuoteen."""
     try:
         df = _load_dividends_dataframe()
     except Exception as e:
@@ -346,7 +352,7 @@ def get_upcoming_dividends_estimated(horizon_days=365):
 
     projected = []
     today = datetime.now()
-    horizon = today + timedelta(days=horizon_days)
+    horizon = until_date or datetime(today.year, 12, 31, 23, 59, 59)
 
     for isin, group in df.groupby('ISIN'):
         group = group.sort_values('Date')
@@ -397,8 +403,7 @@ def get_upcoming_dividends_estimated(horizon_days=365):
 # 9. TAVOITE (100k)
 # =============================================
 
-def calculate_goal(current_value, monthly_savings, yearly_return_pct=0.07):
-    target = 100000
+def calculate_goal(current_value, monthly_savings, target=100000, yearly_return_pct=0.07):
     remaining = target - current_value
     if remaining <= 0:
         return 0, datetime.now()
@@ -409,6 +414,21 @@ def calculate_goal(current_value, monthly_savings, yearly_return_pct=0.07):
         value = value * (1 + monthly_return) + monthly_savings
         months += 1
     return months, datetime.now() + timedelta(days=months * 30)
+
+def calculate_compounding_crossover(current_value, monthly_savings, yearly_return_pct=0.07):
+    """Laskee kuukauden, jolloin sijoitusten kasvu (korkotuotto) ylittää
+    kuukausittain lisättävän säästösumman — eli 'compounding' alkaa kantaa
+    enemmän kuin oma kuukausisäästö."""
+    monthly_return = (1 + yearly_return_pct) ** (1 / 12) - 1
+    value = current_value
+    months = 0
+    while months < 600:
+        interest_this_month = value * monthly_return
+        if interest_this_month >= monthly_savings:
+            return months, datetime.now() + timedelta(days=months * 30), interest_this_month
+        value = value * (1 + monthly_return) + monthly_savings
+        months += 1
+    return None, None, None
 
 # =============================================
 # 10. UUTISET
@@ -613,7 +633,7 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg += "👨‍👩‍👧‍👦 *Perheen holdings*\n"
     for member in FAMILY_HOLDINGS:
-        msg += f"• {member['name']}: {member['holdings']} hold. = €{member['value']:,.2f}\n"
+        msg += f"• {member['name']}: {member['holdings']} hold. = €{member['value']:,.2f} (+€{member['profit']:,.2f} / +{member['profit_percent']:.2f}%)\n"
 
     msg += f"\n📌 *DCA qorshaha:* {DCA_PLAN['name']}\n"
     msg += f"💰 €{DCA_PLAN['amount_eur']}/bil (10-da bil)\n"
@@ -689,14 +709,35 @@ async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     monthly_savings = TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur']
-    months, target_date = calculate_goal(TOTAL_INVESTMENTS, monthly_savings)
-    remaining = 100000 - TOTAL_INVESTMENTS
 
-    msg = "🎯 *Tavoite: 100 000 €*\n━━━━━━━━━━━━━━━━━\n\n"
-    msg += f"💰 Nykyinen: €{TOTAL_INVESTMENTS:,.2f}\n"
-    msg += f"📈 Puuttuu: €{remaining:,.2f}\n"
-    msg += f"📅 Arvioitu saavutus: {target_date.strftime('%d.%m.%Y')} ({months} kk)\n"
-    msg += f"📊 Kuukausisäästö: €{monthly_savings:,.0f} (Trading212 + crypto DCA)"
+    msg = "🎯 *Sijoitustavoitteet*\n━━━━━━━━━━━━━━━━━\n\n"
+    msg += f"💰 Nykyinen salkun arvo: €{TOTAL_INVESTMENTS:,.2f}\n"
+    msg += f"📊 Kuukausisäästö: €{monthly_savings:,.0f} (Trading212 + crypto DCA)\n\n"
+
+    if TOTAL_INVESTMENTS >= 50000:
+        msg += "✅ *50 000 €* — saavutettu jo!\n\n"
+    else:
+        months_50k, date_50k = calculate_goal(TOTAL_INVESTMENTS, monthly_savings, target=50000)
+        msg += f"🥉 *50 000 €*\n"
+        msg += f"   📅 Arvioitu saavutus: {date_50k.strftime('%d.%m.%Y')} ({months_50k} kk)\n"
+        msg += f"   📈 Puuttuu: €{50000 - TOTAL_INVESTMENTS:,.2f}\n\n"
+
+    months_100k, date_100k = calculate_goal(TOTAL_INVESTMENTS, monthly_savings, target=100000)
+    msg += f"🏆 *100 000 €*\n"
+    msg += f"   📅 Arvioitu saavutus: {date_100k.strftime('%d.%m.%Y')} ({months_100k} kk)\n"
+    msg += f"   📈 Puuttuu: €{100000 - TOTAL_INVESTMENTS:,.2f}\n\n"
+
+    cross_months, cross_date, cross_interest = calculate_compounding_crossover(TOTAL_INVESTMENTS, monthly_savings)
+    msg += "📊 *Compounding-piste*\n"
+    if cross_months is not None:
+        if cross_months == 0:
+            msg += "   ✅ Korkotuotto ylittää jo kuukausisäästösi — kasvu kantaa itse itseään!\n"
+        else:
+            msg += f"   📅 {cross_date.strftime('%d.%m.%Y')} ({cross_months} kk)\n"
+            msg += f"   ℹ️ Tästä eteenpäin salkun kuukausittainen korkotuotto (~€{cross_interest:,.0f}) ylittää €{monthly_savings:,.0f} kuukausisäästösi —\n"
+            msg += "   sijoitusten oma kasvu alkaa tuottaa enemmän kuin itse laitat rahaa sisään."
+    else:
+        msg += "   ⚠️ Ei saavutettu laskenta-ajan (50 v) sisällä nykyisillä oletuksilla."
 
     await update.message.reply_text(msg, parse_mode="Markdown")
 
@@ -715,6 +756,7 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     maksupäivä-järjestyksessä kuka maksaa ja paljonko, kuukausi kerralla + kk-summa,
     lopussa koko vuoden yhteissumma."""
     try:
+        current_year = datetime.now().year
         projected, monthly, yearly_total = get_upcoming_dividends_estimated()
 
         if not projected:
@@ -743,7 +785,7 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 block += f"   {div['date']}  •  {div['name']} ({div['symbol']})  →  €{div['amount']:,.2f}\n"
             blocks.append(block)
 
-        footer = f"\n💰 *Yhteensä (12 kk):* €{yearly_total:,.2f}"
+        footer = f"\n💰 *Yhteensä (vuoden {current_year} loppuun):* €{yearly_total:,.2f}"
 
         # Kokoa viestit n. 3500 merkin paloihin kuukausirajoilla
         max_len = 3500
