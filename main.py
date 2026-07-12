@@ -126,6 +126,33 @@ CRYPTO_HOLDINGS = [
     {"symbol": "chainlink", "name": "LINK", "quantity": 3.40208837, "value_eur": 23.86},
 ]
 
+# =============================================
+# HORMUUD PLAN (Hormuud Shares 3.pdf)
+# =============================================
+HORMUUD_ROWS = [
+    {"year": 2024, "initial_capital": 10000, "annual_return": 0, "cash_payment": 0, "monthly_payment": 0, "capital_increase": 0, "capital_development": 0, "value": 0, "paid_date": "Aloitus vuosi"},
+    {"year": 2025, "initial_capital": 10000, "annual_return": 2784, "cash_payment": 1531, "monthly_payment": 128, "capital_increase": 1253, "capital_development": 11253, "value": 37134, "paid_date": "25.3.2025, lisä: 37000€"},
+    {"year": 2026, "initial_capital": 23364, "annual_return": 5719, "cash_payment": 2860, "monthly_payment": 238, "capital_increase": 2860, "capital_development": 26224, "value": 86538, "paid_date": "9.3.2026, lisä: 20000€"},
+    {"year": 2027, "initial_capital": 23364, "annual_return": 5719, "cash_payment": 2860, "monthly_payment": 238, "capital_increase": 2860, "capital_development": 26224, "value": 86538, "paid_date": "Uudelleen sijoitettu 20 000€ vuonna 2026"},
+    {"year": 2028, "initial_capital": 26222, "annual_return": 6419, "cash_payment": 3209, "monthly_payment": 267, "capital_increase": 3209, "capital_development": 29431, "value": 97123, "paid_date": "lisä: 37000"},
+    {"year": 2029, "initial_capital": 29431, "annual_return": 7204, "cash_payment": 3602, "monthly_payment": 300, "capital_increase": 3602, "capital_development": 33033, "value": 109009, "paid_date": "lisä: 20000"},
+    {"year": 2030, "initial_capital": 33033, "annual_return": 8086, "cash_payment": 4043, "monthly_payment": 337, "capital_increase": 4043, "capital_development": 37076, "value": 122351, "paid_date": "lisä: 11920"},
+    {"year": 2031, "initial_capital": 37076, "annual_return": 9076, "cash_payment": 4538, "monthly_payment": 378, "capital_increase": 4538, "capital_development": 41614, "value": 137325, "paid_date": "lisä: 68920"},
+    {"year": 2032, "initial_capital": 41614, "annual_return": 10186, "cash_payment": 5093, "monthly_payment": 424, "capital_increase": 5093, "capital_development": 46707, "value": 154134, "paid_date": ""},
+    {"year": 2033, "initial_capital": 46707, "annual_return": 11433, "cash_payment": 5717, "monthly_payment": 476, "capital_increase": 5717, "capital_development": 52424, "value": 172998, "paid_date": ""},
+    {"year": 2034, "initial_capital": 52424, "annual_return": 14154, "cash_payment": 7077, "monthly_payment": 590, "capital_increase": 7077, "capital_development": 59501, "value": 196354, "paid_date": ""},
+    {"year": 2035, "initial_capital": 53326, "annual_return": 14398, "cash_payment": 7199, "monthly_payment": 600, "capital_increase": 7199, "capital_development": 60525, "value": 199733, "paid_date": ""},
+    {"year": 2036, "initial_capital": 60525, "annual_return": 16342, "cash_payment": 8171, "monthly_payment": 681, "capital_increase": 8171, "capital_development": 68696, "value": 226696, "paid_date": ""},
+    {"year": 2037, "initial_capital": 68696, "annual_return": 18548, "cash_payment": 9274, "monthly_payment": 773, "capital_increase": 9274, "capital_development": 77970, "value": 257301, "paid_date": ""},
+    {"year": 2038, "initial_capital": 77970, "annual_return": 21052, "cash_payment": 10526, "monthly_payment": 877, "capital_increase": 10526, "capital_development": 88496, "value": 292037, "paid_date": ""},
+    {"year": 2039, "initial_capital": 88496, "annual_return": 23894, "cash_payment": 11947, "monthly_payment": 996, "capital_increase": 11947, "capital_development": 100443, "value": 331462, "paid_date": ""},
+    {"year": 2040, "initial_capital": 100443, "annual_return": 27120, "cash_payment": 13560, "monthly_payment": 1130, "capital_increase": 13560, "capital_development": 114003, "value": 376209, "paid_date": ""},
+    {"year": 2041, "initial_capital": 114003, "annual_return": 30781, "cash_payment": 15390, "monthly_payment": 1283, "capital_increase": 15390, "capital_development": 129393, "value": 426998, "paid_date": ""},
+    {"year": 2042, "initial_capital": 129393, "annual_return": 34936, "cash_payment": 17468, "monthly_payment": 1456, "capital_increase": 17468, "capital_development": 146861, "value": 484641, "paid_date": ""},
+    {"year": 2043, "initial_capital": 146861, "annual_return": 39652, "cash_payment": 19826, "monthly_payment": 1652, "capital_increase": 19826, "capital_development": 166687, "value": 550068, "paid_date": ""},
+    {"year": 2044, "initial_capital": 166687, "annual_return": 45005, "cash_payment": 22503, "monthly_payment": 1875, "capital_increase": 22503, "capital_development": 189190, "value": 624326, "paid_date": ""},
+]
+
 # DCA ja Trading 212
 DCA_PLAN = {
     "name": "Aydaurus Dream",
@@ -530,6 +557,19 @@ scheduler.add_job(send_daily_report, 'cron', hour=9, minute=0, id="daily_report"
 scheduler.start()
 
 # =============================================
+# HORMUUD APUFUNKTIO
+# =============================================
+def get_hormuud_status():
+    current_year = datetime.now().year
+    for row in HORMUUD_ROWS:
+        if row["year"] == current_year:
+            return row, current_year
+    if current_year < 2024:
+        return HORMUUD_ROWS[0], 2024
+    else:
+        return HORMUUD_ROWS[-1], 2044
+
+# =============================================
 # 13. TELEGRAM KOMENNOT — PERUS
 # =============================================
 
@@ -560,7 +600,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
         "/dividends - Tulevat osingot, kk-ryhmiteltynä\n"
-        "/recommend - Sijoitusanalyysi & suositukset\n\n"
+        "/recommend - Sijoitusanalyysi & suositukset\n"
+        "/hormuud - Hormuud-suunnitelman tilanne\n"
+        "/hormuud_goal - Hormuud-tavoite ja edistyminen\n\n"
         "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin!",
         parse_mode="Markdown"
     )
@@ -584,7 +626,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
         "/dividends - Tulevat osingot, kk-ryhmiteltynä\n"
-        "/recommend - Sijoitusanalyysi & suositukset\n\n"
+        "/recommend - Sijoitusanalyysi & suositukset\n"
+        "/hormuud - Hormuud-suunnitelman tilanne\n"
+        "/hormuud_goal - Hormuud-tavoite ja edistyminen\n\n"
         "💰 *DCA:* €100/bil (crypto) + €450/kk (Trading 212)\n"
         "📊 *Warbixin maalinle:* 9:00 subax",
         parse_mode="Markdown"
@@ -808,6 +852,40 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe: {str(e)[:150]}")
 
 # =============================================
+# 15. HORMUUD KOMENNOT
+# =============================================
+
+async def hormuud(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    row, year = get_hormuud_status()
+    msg = f"📊 *Hormuud-sijoitus*\n━━━━━━━━━━━━━━━━━\n\n"
+    msg += f"📅 *Vuosi:* {year}\n"
+    msg += f"💰 *Arvo:* €{row['value']:,.2f}\n"
+    msg += f"📈 *Pääoman kehitys:* €{row['capital_development']:,.2f}\n"
+    msg += f"💵 *Käteinen maksu (vuosi):* €{row['cash_payment']:,.2f}\n"
+    msg += f"📆 *Kuukausittainen maksu:* €{row['monthly_payment']:,.2f}\n"
+    if row['paid_date']:
+        msg += f"📌 *Lisätiedot:* {row['paid_date']}\n"
+    final_row = HORMUUD_ROWS[-1]
+    msg += f"\n🎯 *Tavoite (2044):* €{final_row['value']:,.2f}"
+    if final_row['value'] > 0:
+        progress = (row['value'] / final_row['value']) * 100
+        msg += f"\n📊 *Edistyminen:* {progress:.1f}%"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def hormuud_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    row, year = get_hormuud_status()
+    final_row = HORMUUD_ROWS[-1]
+    msg = f"🎯 *Hormuud-tavoite*\n━━━━━━━━━━━━━━━━━\n\n"
+    msg += f"📅 *Nykytilanne ({year}):* €{row['value']:,.2f}\n"
+    msg += f"🏆 *Tavoite (2044):* €{final_row['value']:,.2f}\n"
+    if final_row['value'] > 0:
+        progress = (row['value'] / final_row['value']) * 100
+        remaining = final_row['value'] - row['value']
+        msg += f"📊 *Edistyminen:* {progress:.1f}%\n"
+        msg += f"⏳ *Jäljellä:* €{remaining:,.2f}"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+# =============================================
 # 16. SUOSITUKSET (BUY/HOLD/SELL)
 # =============================================
 async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -896,6 +974,8 @@ def run_bot():
     app.add_handler(CommandHandler("goal", goal))
     app.add_handler(CommandHandler("dividends", dividends))
     app.add_handler(CommandHandler("recommend", recommend))
+    app.add_handler(CommandHandler("hormuud", hormuud))
+    app.add_handler(CommandHandler("hormuud_goal", hormuud_goal))
     app.add_error_handler(error_handler)
     app.run_polling()
 
