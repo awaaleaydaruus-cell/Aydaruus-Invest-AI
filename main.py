@@ -19,9 +19,6 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 TOKEN = os.environ["BOT_TOKEN"]
 PORT = int(os.environ.get("PORT", 10000))
 
-T212_API_KEY = os.environ.get("T212_API_KEY")
-T212_API_SECRET = os.environ.get("T212_API_SECRET")
-
 # =============================================
 # 2. LOGGING
 # =============================================
@@ -135,7 +132,7 @@ DCA_PLAN = {
 TRADING212_PLAN = {
     "name": "Dream",
     "owner": "Aydaruus Ahmed Wehliye",
-    "amount_eur": 450,
+    "amount_eur": 200,
     "day": 10,
     "holdings": 39,
     "next_trade": "2026-08-10",
@@ -145,12 +142,12 @@ TRADING212_PLAN = {
 }
 
 FAMILY_HOLDINGS = [
-    {"name": "Aydaruus", "holdings": TRADING212_PLAN["holdings"], "value": TRADING212_PLAN["total_value"], "profit": TRADING212_PLAN["profit"], "profit_percent": TRADING212_PLAN["profit_percent"]},
-    {"name": "Ismahaan", "holdings": 20, "value": 1184.98, "profit": 178.95, "profit_percent": 17.79},
-    {"name": "Ilyaas", "holdings": 26, "value": 1181.39, "profit": 182.23, "profit_percent": 18.25},
-    {"name": "Farhia", "holdings": 18, "value": 1180.87, "profit": 179.94, "profit_percent": 17.98},
-    {"name": "Mahamed", "holdings": 19, "value": 1177.03, "profit": 156.81, "profit_percent": 15.38},
-    {"name": "Yahye", "holdings": 25, "value": 966.85, "profit": 128.01, "profit_percent": 15.27},
+    {"name": "Aydaruus", "holdings": TRADING212_PLAN["holdings"], "value": TRADING212_PLAN["total_value"], "profit": TRADING212_PLAN["profit"], "profit_percent": TRADING212_PLAN["profit_percent"], "monthly_savings": 200},
+    {"name": "Ismahaan", "holdings": 20, "value": 1184.98, "profit": 178.95, "profit_percent": 17.79, "monthly_savings": 50},
+    {"name": "Ilyaas", "holdings": 26, "value": 1181.39, "profit": 182.23, "profit_percent": 18.25, "monthly_savings": 50},
+    {"name": "Farhia", "holdings": 18, "value": 1180.87, "profit": 179.94, "profit_percent": 17.98, "monthly_savings": 50},
+    {"name": "Mahamed", "holdings": 19, "value": 1177.03, "profit": 156.81, "profit_percent": 15.38, "monthly_savings": 50},
+    {"name": "Yahye", "holdings": 25, "value": 966.85, "profit": 128.01, "profit_percent": 15.27, "monthly_savings": 50},
 ]
 
 TOTAL_INVESTMENTS = 33253.64
@@ -372,18 +369,6 @@ def calculate_compounding_crossover(current_value, monthly_savings, yearly_retur
         months += 1
     return None, None, None
 
-def calculate_goal_for_member(member_name, member_value, monthly_savings=0, yearly_return_pct=0.07):
-    """Laskee tavoitteet yhdelle perheenjäsenelle (ilman kuukausisäästöä)."""
-    goals = [10000, 20000, 50000, 100000]
-    result = []
-    for target in goals:
-        if member_value >= target:
-            result.append({"target": target, "months": 0, "date": datetime.now(), "achieved": True})
-        else:
-            months, date = calculate_goal(member_value, monthly_savings, target, yearly_return_pct)
-            result.append({"target": target, "months": months, "date": date, "achieved": False})
-    return result
-
 # =============================================
 # 10. UUTISET
 # =============================================
@@ -464,7 +449,8 @@ async def send_daily_report():
         for member in FAMILY_HOLDINGS:
             msg += f"• {member['name']}: €{member['value']:,.2f} (+{member['profit_percent']:.1f}%)\n"
 
-        msg += f"\n💵 Osingot (12 kk, todelliset): €{sum(get_dividend_details()[1]):,.2f}\n"
+        _, total_div = get_dividend_details()
+        msg += f"\n💵 Osingot (12 kk, todelliset): €{total_div:,.2f}\n"
 
         today = datetime.now()
         if today.day == 10:
@@ -484,6 +470,31 @@ async def send_daily_report():
     except Exception as e:
         logging.error(f"Virhe send_daily_report: {e}")
 
+def get_dividend_details():
+    try:
+        df = _load_dividends_dataframe()
+    except Exception as e:
+        logging.error(f"Virhe luettaessa CSV: {e}")
+        return [], 0.0
+
+    dividend_list = []
+    for _, row in df.iterrows():
+        dividend_list.append({
+            "date": row['Date'].strftime('%d.%m.%Y'),
+            "date_sort": row['Date'],
+            "isin": row['ISIN'],
+            "symbol": row['Ticker'],
+            "name": row['Name'],
+            "amount": round(row['Total'], 2),
+            "quantity": row['Shares'],
+            "per_share": round(row['PerShare'], 4),
+            "currency": row.get('Currency (Price / share)', ''),
+            "tax": round(row['Tax'], 2),
+        })
+    dividend_list.sort(key=lambda x: x['date_sort'], reverse=True)
+    total = round(sum(d['amount'] for d in dividend_list), 2)
+    return dividend_list, total
+
 def send_daily_report_sync():
     import asyncio
     asyncio.run(send_daily_report())
@@ -498,7 +509,6 @@ scheduler.start()
 # =============================================
 # 13. TELEGRAM KOMENNOT
 # =============================================
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user = update.effective_user
@@ -560,7 +570,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/dividends - Näytä kaikkien perheenjäsenten osingot eriteltynä\n"
             "/recommend - Sijoitusanalyysi & suositukset\n"
             "/testreport - Testaa aamuraportti (manuaalinen)\n\n"
-            "💰 *DCA:* €100/bil (crypto) + €450/kk (Trading 212)\n"
+            "💰 *DCA:* €100/bil (crypto) + €200/kk (Aydaruus) + 5×50€/kk (perhe) = 550€/kk\n"
             "📊 *Warbixin maalinle:* 9:00 subax",
             parse_mode="Markdown"
         )
@@ -610,8 +620,12 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"📈 *Stock holdings:* {len(STOCK_HOLDINGS)} holdings\n"
         msg += f"🪙 *Crypto holdings:* {len(CRYPTO_HOLDINGS)} holdings\n\n"
 
-        msg += f"📊 *Trading 212 -kuukausisijoitus*\n"
-        msg += f"💰 €{TRADING212_PLAN['amount_eur']}/kk (10. päivä)\n\n"
+        msg += f"📊 *Trading 212 -kuukausisijoitus:*\n"
+        msg += f"💰 Aydaruus: €200/kk (10. päivä)\n"
+        for member in FAMILY_HOLDINGS:
+            if member["name"] != "Aydaruus":
+                msg += f"💰 {member['name']}: €{member['monthly_savings']}/kk (10. päivä)\n"
+        msg += f"💰 Yhteensä: €450/kk\n\n"
 
         msg += "👨‍👩‍👧‍👦 *Perheen holdings*\n"
         for member in FAMILY_HOLDINGS:
@@ -715,12 +729,13 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         msg = "🎯 *Sijoitustavoitteet*\n━━━━━━━━━━━━━━━━━\n\n"
 
-        # 1) Trading212 (Aydaruus)
-        t212_value = TOTAL_INVESTMENTS
-        t212_savings = TRADING212_PLAN['amount_eur']
+        # Aydaruus: Trading212 (200 €/kk)
+        aydaruus = next(m for m in FAMILY_HOLDINGS if m["name"] == "Aydaruus")
+        t212_value = aydaruus["value"]
+        t212_savings = aydaruus["monthly_savings"]
         t212_goals = [50000, 100000]
 
-        msg += "📊 *Trading212 (Aydaruus, 450 €/kk)*\n"
+        msg += f"📊 *Trading212 (Aydaruus, {t212_savings} €/kk)*\n"
         msg += f"💰 Nykyinen arvo: €{t212_value:,.2f}\n"
         for target in t212_goals:
             if t212_value >= target:
@@ -739,11 +754,11 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += "ei saavutettu 50 v sisällä\n"
         msg += "\n"
 
-        # 2) Krypto (Aydaruus)
+        # Aydaruus: Krypto DCA (100 €/kk)
         crypto_value = TOTAL_CRYPTO
         crypto_savings = DCA_PLAN['amount_eur']
         crypto_goals = [10000, 20000, 50000, 100000]
-        msg += "🪙 *Krypto DCA (Aydaruus, 100 €/kk)*\n"
+        msg += f"🪙 *Krypto DCA (Aydaruus, {crypto_savings} €/kk)*\n"
         msg += f"💰 Nykyinen arvo: €{crypto_value:,.2f}\n"
         for target in crypto_goals:
             if crypto_value >= target:
@@ -753,11 +768,11 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg += f"   🥅 *{target:,.0f} €*: {date.strftime('%d.%m.%Y')} ({months} kk), puuttuu €{target - crypto_value:,.2f}\n"
         msg += "\n"
 
-        # 3) Yhteensä (Aydaruus)
+        # Aydaruus: Yhteensä (200+100=300 €/kk)
         total_value = t212_value + crypto_value
         total_savings = t212_savings + crypto_savings
         total_goals = [50000, 100000, 250000, 500000, 1000000]
-        msg += "💎 *Yhteensä (Aydaruus, 550 €/kk)*\n"
+        msg += f"💎 *Yhteensä (Aydaruus, {total_savings} €/kk)*\n"
         msg += f"💰 Nykyinen arvo: €{total_value:,.2f}\n"
         for target in total_goals:
             if total_value >= target:
@@ -767,22 +782,23 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg += f"   🥅 *{target:,.0f} €*: {date.strftime('%d.%m.%Y')} ({months} kk), puuttuu €{target - total_value:,.2f}\n"
         msg += "\n━━━━━━━━━━━━━━━━━\n\n"
 
-        # 4) PERHEENJÄSENTEN TAVOITTEET (10k, 20k, 50k, 100k)
+        # Perheenjäsenet (Ismahaan, Ilyaas, Farhia, Mahamed, Yahye) — 50 €/kk kukin
         msg += "👨‍👩‍👧‍👦 *Perheenjäsenten tavoitteet*\n"
-        msg += "(ilman kuukausisäästöä, 7% vuosituotto)\n\n"
+        msg += "(oma kuukausisäästö 50 €/kk, 7% vuosituotto)\n\n"
         family_goals = [10000, 20000, 50000, 100000]
 
         for member in FAMILY_HOLDINGS:
-            if member["name"].lower() == "aydaruus":
-                continue  # Aydaruus jo yllä
+            if member["name"] == "Aydaruus":
+                continue
             name = member["name"]
             value = member["value"]
-            msg += f"📌 *{name}* — €{value:,.2f}\n"
+            savings = member["monthly_savings"]
+            msg += f"📌 *{name}* — €{value:,.2f} (säästö {savings} €/kk)\n"
             for target in family_goals:
                 if value >= target:
                     msg += f"   ✅ *{target:,.0f} €* — saavutettu!\n"
                 else:
-                    months, date = calculate_goal(value, 0, target=target)
+                    months, date = calculate_goal(value, savings, target=target)
                     if months < 600:
                         msg += f"   🥅 *{target:,.0f} €*: {date.strftime('%d.%m.%Y')} ({months} kk), puuttuu €{target - value:,.2f}\n"
                     else:
@@ -830,7 +846,6 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_year = datetime.now().year
         max_len = 3500
 
-        # Näytä KAIKKI perheenjäsenet (ei parametria)
         all_messages = []
         for owner in FAMILY_OWNERSHIPS.keys():
             projected, monthly, yearly_total = get_upcoming_dividends_estimated(owner=owner)
@@ -934,7 +949,7 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Virhe /recommend: {str(e)[:200]}")
 
 # =============================================
-# 17. TESTREPORT — Testaa aamuraportti manuaalisesti
+# 17. TESTREPORT
 # =============================================
 async def testreport(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
