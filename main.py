@@ -145,7 +145,11 @@ TRADING212_PLAN = {
     "profit_percent": 11.97
 }
 
+# =============================================
+# PERHEEN HOLDINGS – Nyt isä mukana!
+# =============================================
 FAMILY_HOLDINGS = [
+    {"name": "👨 Aydaruus Ahmed Wehliye (Isä)", "holdings": 18, "value": 1180.00, "profit": 180.00, "profit_percent": 18.0},
     {"name": "Ismahaan Aydaurus", "holdings": 20, "value": 1184.98, "profit": 178.95, "profit_percent": 17.79},
     {"name": "Ilyaas Aydaurus", "holdings": 26, "value": 1181.39, "profit": 182.23, "profit_percent": 18.25},
     {"name": "Farhia Aydaurus", "holdings": 18, "value": 1180.87, "profit": 179.94, "profit_percent": 17.98},
@@ -269,7 +273,7 @@ def get_recommendation(current_price, old_price, name):
         return "🟡 HOLD", f"{change:+.1f}% (neutraali)"
 
 # =============================================
-# 7. OSINGOT – OSAKKEET JA ETF:T (VAIN JAKAVAT)
+# 7. OSINGOT – OSAKKEET JA ETF:T
 # =============================================
 
 def get_dividend_details():
@@ -321,7 +325,6 @@ def get_dividend_details():
             continue
 
     # --- 2. ETF:T (VAIN JAKAVAT) ---
-    # Jakavat ETF:t – nämä maksavat osinkoa
     DISTRIBUTING_ETFS = [
         "iShares Core S&P 500 Dist",
         "SPDR S&P US Dividend Aristocrats",
@@ -397,7 +400,6 @@ def get_dividend_details():
                     logging.error(f"Virhe haettaessa ETF-osinkoa {etf['name']}: {e}")
                     continue
         else:
-            # Kasvava ETF (Acc) – ei maksa osinkoa
             logging.info(f"ETF {etf['name']} on kasvava (Acc) – ei osinkoa.")
 
     dividend_list.sort(key=lambda x: x.get("ex_date", "99.99.9999"))
@@ -753,7 +755,7 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
-# 13. OSINGOT (KORJATTU – TRY-EXCEPT)
+# 13. OSINGOT – KORJATTU (ei "Message too long")
 # =============================================
 async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -766,22 +768,38 @@ async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        msg = "💰 *Tulevat osinkomaksut (historian perusteella)*\n"
-        msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        # Näytetään max 15 osinkoa per viesti
+        max_per_msg = 15
+        total_items = len(dividend_list)
+        sent_count = 0
 
-        for div in dividend_list:
-            msg += f"🔹 *{div['name']}* ({div['symbol']})\n"
-            msg += f"   📊 Tyyppi: {div['type']}\n"
-            msg += f"   💰 Viimeisin osinko/osake: €{div['dividend_per_share']:.4f}\n"
-            msg += f"   📦 Sinä saat (12 kk): {div['quantity']:.2f} × €{div['yearly_total']/div['quantity']:.4f} = *€{div['yearly_total']:,.2f}*\n"
-            msg += f"   📅 Ex-date: {div['ex_date']}\n"
-            msg += f"   💳 Maksupäivä: {div['payout_date']}\n"
-            msg += "\n"
+        while sent_count < total_items:
+            chunk = dividend_list[sent_count:sent_count + max_per_msg]
+            sent_count += len(chunk)
 
-        msg += f"📊 *Osinkoja yhteensä vuodessa:* €{total_yearly:,.2f}"
-        msg += "\n\nℹ️ *Huom:* Kasvavat ETF:t (Acc) eivät maksa osinkoa, vaan sijoittavat uudelleen."
+            msg = "💰 *Tulevat osinkomaksut (historian perusteella)*\n"
+            msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-        await update.message.reply_text(msg, parse_mode="Markdown")
+            for div in chunk:
+                div_per_share = div['dividend_per_share']
+                yearly_total = div['yearly_total']
+                quantity = div['quantity']
+                
+                msg += f"🔹 *{div['name']}* ({div['symbol']})\n"
+                msg += f"   📊 Tyyppi: {div['type']}\n"
+                msg += f"   💰 Osinko/osake: €{div_per_share:.4f}\n"
+                msg += f"   📦 Sinä saat: {quantity:.2f} × €{div_per_share:.4f} = *€{yearly_total:,.2f}*\n"
+                msg += f"   📅 Ex-date: {div['ex_date']}\n"
+                msg += f"   💳 Maksupäivä: {div['payout_date']}\n"
+                msg += "\n"
+
+            # Lisätään yhteenveto vain viimeiseen viestiin
+            if sent_count >= total_items:
+                msg += f"📊 *Osinkoja yhteensä vuodessa:* €{total_yearly:,.2f}\n"
+                msg += "ℹ️ *Huom:* Kasvavat ETF:t (Acc) eivät maksa osinkoa."
+
+            await update.message.reply_text(msg, parse_mode="Markdown")
+
     except Exception as e:
         logging.error(f"Virhe dividends-komennossa: {e}")
         await update.message.reply_text(f"⚠️ Virhe haettaessa osinkoja: {str(e)[:100]}")
