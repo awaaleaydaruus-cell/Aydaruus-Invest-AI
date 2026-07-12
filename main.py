@@ -227,8 +227,54 @@ def get_stock_price(symbol):
         logging.error(f"Error fetching stock {symbol}: {e}")
         return None
 
+def get_etf_price(symbol):
+    return get_stock_price(symbol)
+
 # =============================================
-# 6. OSINGOT
+# 6. HISTORIALLISET HINNAT (30 päivää)
+# =============================================
+
+def get_stock_historical(symbol, days=30):
+    """Hae osakkeen/ETF:n hinta days päivää sitten"""
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=f"{days}d")
+        if not hist.empty:
+            return round(hist["Close"].iloc[0], 2)
+    except Exception as e:
+        logging.error(f"Historical error {symbol}: {e}")
+    return None
+
+def get_crypto_historical(symbol, days=30):
+    """Hae krypton hinta days päivää sitten (CoinGecko)"""
+    try:
+        url = f"https://api.coingecko.com/api/v3/coins/{symbol}/market_chart?vs_currency=eur&days={days}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        r = requests.get(url, timeout=10, headers=headers)
+        if r.status_code == 200:
+            data = r.json()
+            if "prices" in data and len(data["prices"]) > 0:
+                return data["prices"][0][1]
+    except Exception as e:
+        logging.error(f"Crypto historical error {symbol}: {e}")
+    return None
+
+def get_recommendation(current_price, old_price, name):
+    """Palauttaa suosituksen: BUY, HOLD, SELL"""
+    if current_price is None or old_price is None or old_price == 0:
+        return "❓", "Ei tarpeeksi dataa"
+    
+    change = ((current_price - old_price) / old_price) * 100
+    
+    if change >= 10:
+        return "🔴 SELL", f"+{change:.1f}% (kallis)"
+    elif change <= -10:
+        return "🟢 BUY", f"{change:.1f}% (halpa)"
+    else:
+        return "🟡 HOLD", f"{change:+.1f}% (neutraali)"
+
+# =============================================
+# 7. OSINGOT (TULEVAT MAKSUT)
 # =============================================
 
 def get_dividend_income():
@@ -250,49 +296,56 @@ def get_dividend_income():
     return total_yearly, upcoming
 
 def get_dividend_details():
-    """Palauttaa osinkotiedot eriteltynä"""
+    """
+    Palauttaa tulevat osinkotiedot eriteltynä.
+    Käyttää yfinance:in info-kenttiä: dividendRate, exDividendDate, dividendDate.
+    """
     dividend_list = []
     total_yearly = 0.0
-    
+
     for stock in STOCK_HOLDINGS:
         try:
             ticker = yf.Ticker(stock["symbol"])
             info = ticker.info
+
+            # Haetaan osinko/osake
             div_rate = info.get("dividendRate", 0)
-            ex_date = info.get("exDividendDate")
-            payout_date = info.get("dividendDate")
-            
+            ex_date_ts = info.get("exDividendDate")
+            payout_date_ts = info.get("dividendDate")
+
             if div_rate and div_rate > 0:
-                yearly = div_rate * stock["quantity"]
-                total_yearly += yearly
-                
-                if ex_date:
-                    ex_date_str = datetime.fromtimestamp(ex_date).strftime('%d.%m.%Y')
+                yearly_total = div_rate * stock["quantity"]
+                total_yearly += yearly_total
+
+                if ex_date_ts:
+                    ex_date = datetime.fromtimestamp(ex_date_ts).strftime('%d.%m.%Y')
                 else:
-                    ex_date_str = "Ei tiedossa"
-                
-                if payout_date:
-                    payout_date_str = datetime.fromtimestamp(payout_date).strftime('%d.%m.%Y')
+                    ex_date = "Ei tiedossa"
+
+                if payout_date_ts:
+                    payout_date = datetime.fromtimestamp(payout_date_ts).strftime('%d.%m.%Y')
                 else:
-                    payout_date_str = "Ei tiedossa"
-                
+                    payout_date = "Ilmoitetaan myöhemmin"
+
                 dividend_list.append({
                     "symbol": stock["symbol"],
                     "name": stock["name"],
-                    "dividend_per_share": div_rate,
-                    "yearly_total": yearly,
-                    "ex_date": ex_date_str,
-                    "payout_date": payout_date_str,
+                    "dividend_per_share": round(div_rate, 4),
+                    "yearly_total": round(yearly_total, 2),
+                    "ex_date": ex_date,
+                    "payout_date": payout_date,
                     "quantity": stock["quantity"]
                 })
+            else:
+                logging.info(f"{stock['symbol']}: Ei osinkoa tai tieto puuttuu")
         except Exception as e:
-            logging.error(f"Dividend error for {stock['symbol']}: {e}")
-    
+            logging.error(f"Virhe haettaessa osinkoa {stock['symbol']}: {e}")
+
     dividend_list.sort(key=lambda x: x.get("ex_date", "99.99.9999"))
     return dividend_list, total_yearly
 
 # =============================================
-# 7. TAVOITE (100k)
+# 8. TAVOITE (100k)
 # =============================================
 
 def calculate_goal(current_value, monthly_savings, yearly_return_pct=0.07):
@@ -309,7 +362,7 @@ def calculate_goal(current_value, monthly_savings, yearly_return_pct=0.07):
     return months, datetime.now() + timedelta(days=months*30)
 
 # =============================================
-# 8. UUTISET
+# 9. UUTISET
 # =============================================
 
 def get_news(query, limit=3):
@@ -350,7 +403,7 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
-# 9. WARBIXIN MAALINLE (Scheduler)
+# 10. WARBIXIN MAALINLE (Scheduler)
 # =============================================
 
 async def send_daily_report():
@@ -392,7 +445,6 @@ async def send_daily_report():
     if link: msg += f"🔗 LINK: €{link:,.2f}\n"
     else: msg += "🔗 LINK: Laga ma helin\n"
 
-    # Tavoite 100k
     div_total, _ = get_dividend_income()
     months, target_date = calculate_goal(TOTAL_INVESTMENTS, TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur'])
     msg += f"\n🎯 *100k € tavoite*\n"
@@ -416,14 +468,14 @@ async def send_daily_report():
         logging.error(f"Warbixin maalinle ah waa ay fashilantay: {e}")
 
 # =============================================
-# 10. QORSHEYNTA (Scheduler)
+# 11. QORSHEYNTA (Scheduler)
 # =============================================
 scheduler = BackgroundScheduler()
 scheduler.add_job(send_daily_report, 'cron', hour=9, minute=0, id="daily_report", replace_existing=True)
 scheduler.start()
 
 # =============================================
-# 11. TELEGRAM KOMENNOT
+# 12. TELEGRAM KOMENNOT
 # =============================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -452,7 +504,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/testapi - Tijaabi API-yada\n"
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
-        "/dividends - Osingot eriteltynä\n\n"
+        "/dividends - Osingot eriteltynä\n"
+        "/recommend - Sijoitusanalyysi & suositukset\n\n"
         "💰 Maalin kasta 9:00 subax waxaan kuu soo dirayaa warbixin!",
         parse_mode="Markdown"
     )
@@ -475,7 +528,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/testapi - Tijaabi API-yada\n"
         "/news - Uutiset omistuksista\n"
         "/goal - Tavoite 100k €\n"
-        "/dividends - Osingot eriteltynä\n\n"
+        "/dividends - Osingot eriteltynä\n"
+        "/recommend - Sijoitusanalyysi & suositukset\n\n"
         "💰 *DCA:* €100/bil (crypto) + €450/kk (Trading 212)\n"
         "📊 *Warbixin maalinle:* 9:00 subax",
         parse_mode="Markdown"
@@ -527,7 +581,6 @@ async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg += f"\n💰 *Crypto holdings:* €{TOTAL_CRYPTO:,.2f}\n"
     msg += f"💵 *Wadarta guud:* €{TOTAL_INVESTMENTS:,.2f}"
 
-    # Tavoite
     months, target_date = calculate_goal(TOTAL_INVESTMENTS, TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur'])
     msg += f"\n\n🎯 *100k €:* puuttuu €{100000 - TOTAL_INVESTMENTS:,.2f}, arvio {target_date.strftime('%d.%m.%Y')} ({months} kk)"
 
@@ -587,7 +640,6 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "🧪 *Tijaabo API (EUR)*\n\n"
-    # Kraken
     try:
         url = "https://api.kraken.com/0/public/Ticker?pair=BTCEUR"
         r = requests.get(url, timeout=10)
@@ -602,7 +654,6 @@ async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"❌ Kraken: {r.status_code}\n"
     except Exception as e:
         msg += f"❌ Kraken error: {e}\n"
-    # KuCoin
     try:
         url = "https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=BTC-EUR"
         r = requests.get(url, timeout=10)
@@ -614,7 +665,6 @@ async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"❌ KuCoin: {r.status_code}\n"
     except Exception as e:
         msg += f"❌ KuCoin error: {e}\n"
-    # CoinGecko
     try:
         url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -629,9 +679,6 @@ async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"❌ CoinGecko error: {e}\n"
     await update.message.reply_text(msg)
 
-# =============================================
-# 12. TAVOITE (VAIN 100k)
-# =============================================
 async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     monthly_savings = TRADING212_PLAN['amount_eur'] + DCA_PLAN['amount_eur']
     months, target_date = calculate_goal(TOTAL_INVESTMENTS, monthly_savings)
@@ -646,32 +693,113 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-# =============================================
-# 13. OSINGOT ERIKSEEN
-# =============================================
 async def dividends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dividend_list, total_yearly = get_dividend_details()
-    
+
     if not dividend_list:
-        await update.message.reply_text("⚠️ Osinkotietoja ei löytynyt tällä hetkellä.")
+        await update.message.reply_text(
+            "⚠️ Osinkotietoja ei löytynyt tällä hetkellä.\n"
+            "Varmista, että omistat osinkoa maksavia osakkeita."
+        )
         return
-    
-    msg = "💰 *Osingot eriteltynä*\n"
-    msg += "━━━━━━━━━━━━━━━━━\n\n"
-    
+
+    msg = "💰 *Tulevat osinkomaksut*\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
     for div in dividend_list:
         msg += f"🔹 *{div['name']}* ({div['symbol']})\n"
-        msg += f"   📦 {div['quantity']:.2f} x €{div['dividend_per_share']:.2f} = €{div['yearly_total']:,.2f}/v\n"
-        msg += f"   📅 Ex-date: {div['ex_date']}\n"
+        msg += f"   💰 Osinko/osake: €{div['dividend_per_share']:.4f}\n"
+        msg += f"   📦 Sinä saat: {div['quantity']:.2f} × €{div['dividend_per_share']:.4f} = *€{div['yearly_total']:,.2f}*\n"
+        msg += f"   📅 Ex-date (omistuspäivä): {div['ex_date']}\n"
         msg += f"   💳 Maksupäivä: {div['payout_date']}\n"
         msg += "\n"
-    
+
     msg += f"📊 *Osinkoja yhteensä vuodessa:* €{total_yearly:,.2f}"
+    msg += "\n\nℹ️ *Huom:* Ex-date on päivä, jolloin osakkeen on oltava omistuksessa. Maksupäivä on päivä, jolloin rahat tulevat tilille."
+
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = "📊 *Sijoitusanalyysi & suositukset*\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━━━\n"
+    msg += "⚡ 30 päivän hinnanmuutokseen perustuen:\n\n"
+    
+    # --- Crypto ---
+    msg += "🪙 *Kryptot*\n"
+    crypto_prices = {
+        "BTC": get_btc_price(),
+        "ETH": get_eth_price(),
+        "SOL": get_sol_price(),
+        "XRP": get_xrp_price(),
+        "BNB": get_bnb_price(),
+        "SUI": get_sui_price(),
+        "XLM": get_xlm_price(),
+        "ADA": get_ada_price(),
+        "LINK": get_link_price()
+    }
+    for name, current in crypto_prices.items():
+        if current:
+            old = get_crypto_historical(name.lower(), 30)
+            rec, detail = get_recommendation(current, old, name)
+            msg += f"{rec} *{name}*: €{current:,.0f} ({detail})\n"
+        else:
+            msg += f"❌ {name}: Ei hintaa\n"
+    
+    # --- ETF:t ---
+    msg += "\n📈 *ETF:t*\n"
+    ticker_map = {
+        "iShares Core S&P 500": "SPY",
+        "Vanguard S&P 500": "VOO",
+        "iShares Core MSCI World": "URTH",
+        "Vanguard FTSE All-World": "VWRA",
+        "iShares NASDAQ 100": "QQQ",
+        "SPDR S&P 500": "SPY5",
+        "Vanguard S&P 500": "VUSA",
+        "iShares Core S&P 500 Dist": "IUSA",
+        "iShares NASDAQ 100": "EQQQ",
+        "SPDR S&P 400 Mid Cap": "SPY4",
+        "iShares Core MSCI Europe": "MEUD",
+        "JPMorgan Nasdaq Premium": "JNQ",
+        "JPMorgan US Equity Premium": "JUEQ",
+        "JPMorgan Global Equity Premium": "JGEP",
+        "Vanguard FTSE All-World High Div": "VHYL",
+        "Global X Nasdaq 100 Covered Call": "QYLD",
+        "VanEck Semiconductor": "SMH",
+        "SPDR S&P US Dividend Aristocrats": "UDVD"
+    }
+    for etf in ETF_HOLDINGS:
+        ticker = ticker_map.get(etf["name"])
+        if ticker:
+            current = get_etf_price(ticker)
+            if current:
+                old = get_stock_historical(ticker, 30)
+                rec, detail = get_recommendation(current, old, etf["name"])
+                msg += f"{rec} *{etf['name'][:20]}*: ${current:,.2f} ({detail})\n"
+            else:
+                msg += f"❌ {etf['name'][:20]}: Ei hintaa\n"
+        else:
+            msg += f"⚠️ {etf['name'][:20]}: Ei tickeriä\n"
+    
+    # --- Osakkeet ---
+    msg += "\n📊 *Osakkeet*\n"
+    for stock in STOCK_HOLDINGS:
+        current = get_stock_price(stock["symbol"])
+        if current:
+            old = get_stock_historical(stock["symbol"], 30)
+            rec, detail = get_recommendation(current, old, stock["name"])
+            msg += f"{rec} *{stock['name'][:15]}*: ${current:,.2f} ({detail})\n"
+        else:
+            msg += f"❌ {stock['name'][:15]}: Ei hintaa\n"
+    
+    msg += "\n💡 *Selitys:*\n"
+    msg += "🟢 BUY = hinta laskenut ≥10% (hyvä ostopaikka)\n"
+    msg += "🟡 HOLD = hinta muuttunut alle 10%\n"
+    msg += "🔴 SELL = hinta noussut ≥10% (hyvä myydä)"
     
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # =============================================
-# 14. VIRHEIDENKÄSITTELY
+# 13. VIRHEIDENKÄSITTELY
 # =============================================
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.error(f"Virhe: {context.error}")
@@ -679,7 +807,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("⚠️ Jokin meni pieleen. Yritä uudelleen.")
 
 # =============================================
-# 15. FLASK
+# 14. FLASK
 # =============================================
 flask_app = Flask(__name__)
 
@@ -691,7 +819,7 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=PORT, debug=False)
 
 # =============================================
-# 16. PÄÄFUNKTIO
+# 15. PÄÄFUNKTIO
 # =============================================
 def run_bot():
     app = Application.builder().token(TOKEN).build()
@@ -708,6 +836,7 @@ def run_bot():
     app.add_handler(CommandHandler("news", news))
     app.add_handler(CommandHandler("goal", goal))
     app.add_handler(CommandHandler("dividends", dividends))
+    app.add_handler(CommandHandler("recommend", recommend))
     app.add_error_handler(error_handler)
     app.run_polling()
 
