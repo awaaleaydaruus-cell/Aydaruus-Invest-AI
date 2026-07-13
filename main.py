@@ -46,6 +46,7 @@ def get_all_user_ids():
     conn.close()
     return [row[0] for row in rows]
 
+# ----- HOLDINGS (sama kuin aiemmin) -----
 ETF_HOLDINGS = [
     {"isin": "IE00B5BMR087", "symbol": "SPY5L.L",  "name": "iShares Core S&P 500 UCITS ETF",                      "quantity": 1.3195215,   "price": 711.48},
     {"isin": "IE00BFMXXD54", "symbol": "VUAA.L",   "name": "Vanguard S&P 500 UCITS ETF",                          "quantity": 6.78430694,  "price": 127.59},
@@ -170,6 +171,7 @@ def generate_family_ownerships():
 
 FAMILY_OWNERSHIPS = generate_family_ownerships()
 
+# ----- HINTA-APIT -----
 def get_crypto_price(symbol):
     symbol_map = {"bitcoin": "BTC", "ethereum": "ETH", "solana": "SOL", "ripple": "XRP", "binancecoin": "BNB", "sui": "SUI", "stellar": "XLM", "cardano": "ADA", "chainlink": "LINK"}
     sym = symbol_map.get(symbol, symbol.upper())
@@ -242,6 +244,7 @@ def get_recommendation(current_price, old_price, name):
     elif change <= -10: return "🟢 BUY", f"{change:.1f}% (halpa)"
     else: return "🟡 HOLD", f"{change:+.1f}% (neutraali)"
 
+# ----- OSINGOT -----
 DIVIDENDS_CSV_PATH = "dividends.csv"
 
 def _load_dividends_dataframe():
@@ -339,6 +342,7 @@ def build_dividend_report_text(owner_label="Aydaruus", owner_key="aydaruus", tod
     msg += f"   💰 *Kuukausi yhteensä:* €{summary['month_total']:,.2f}\n"
     return msg
 
+# ----- TAVOITTEET, KASVU, UUTISET -----
 def calculate_goal(current_value, monthly_savings, target=100000, yearly_return_pct=0.07):
     remaining = target - current_value
     if remaining <= 0:
@@ -501,6 +505,7 @@ async def send_long_message(bot, chat_id, text, max_len=3500):
     for part in parts:
         await bot.send_message(chat_id=chat_id, text=part, parse_mode="Markdown")
 
+# ----- AAMURAPORTTI -----
 async def send_daily_report():
     try:
         user_ids = get_all_user_ids()
@@ -560,6 +565,7 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(send_daily_report_sync, 'cron', hour=9, minute=0, id="daily_report", replace_existing=True)
 scheduler.start()
 
+# ----- CRYPTO AI -----
 def get_fear_greed():
     try:
         url = "https://api.alternative.me/fng/?limit=1"
@@ -632,6 +638,7 @@ def build_crypto_ai_report():
         msg += "\n🐋 Ei suuria siirtoja havaittu (tai API-rajoitus).\n"
     return msg
 
+# ----- PRESALE HUNTER -----
 def fetch_presales():
     projects = []
     try:
@@ -692,6 +699,7 @@ def build_presale_report(limit=5):
         msg += "\n"
     return msg
 
+# ----- MARKET INTELLIGENCE -----
 def get_fed_rate():
     try:
         ticker = yf.Ticker("^TNX")
@@ -734,6 +742,232 @@ def build_market_intelligence_report():
         msg += "\n📢 *Markkina: NEUTRAALI* – suositus: DCA varovaisesti\n"
     return msg
 
+# ============================================================
+#  UUSI: TRADING AGENT 3.0 - SIGNAL GENERATOR & RISK MANAGEMENT
+# ============================================================
+
+def get_ohlcv(symbol, source='binance', timeframe='1h', limit=100):
+    """Hakee OHLCV-datan (krypto Binancelta tai osake yfinance)."""
+    try:
+        if source == 'binance':
+            if symbol.endswith('USDT'):
+                sym = symbol
+            else:
+                sym = symbol.upper() + 'USDT'
+            url = f"https://api.binance.com/api/v3/klines?symbol={sym}&interval={timeframe}&limit={limit}"
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                df = pd.DataFrame(data, columns=['time','open','high','low','close','volume','close_time','quote_asset_volume','trades','taker_buy_base','taker_buy_quote','ignore'])
+                df['close'] = df['close'].astype(float)
+                df['high'] = df['high'].astype(float)
+                df['low'] = df['low'].astype(float)
+                df['open'] = df['open'].astype(float)
+                df['volume'] = df['volume'].astype(float)
+                return df[['open','high','low','close','volume']]
+        else:  # yfinance
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(period=f"{limit}{timeframe[0]}")
+            if not df.empty:
+                return df[['Open','High','Low','Close','Volume']].rename(columns={'Open':'open','High':'high','Low':'low','Close':'close','Volume':'volume'})
+    except Exception as e:
+        logging.error(f"OHLCV haku epäonnistui {symbol}: {e}")
+    return None
+
+def calculate_indicators(df):
+    if df is None or df.empty:
+        return None
+    df['rsi'] = ta.rsi(df['close'], length=14)
+    macd = ta.macd(df['close'], fast=12, slow=26, signal=9)
+    if macd is not None and not macd.empty:
+        df['macd'] = macd['MACD_12_26_9']
+        df['macd_signal'] = macd['MACD_signal_12_26_9']
+    df['ema20'] = ta.ema(df['close'], length=20)
+    df['vwap'] = (df['volume'] * (df['high'] + df['low'] + df['close']) / 3).cumsum() / df['volume'].cumsum()
+    df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
+    return df
+
+def get_active_strategy():
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute("SELECT name, weight_rsi, weight_macd, weight_ema, weight_vwap, weight_atr, weight_sentiment, min_confidence, min_risk_reward FROM strategies WHERE active=1 LIMIT 1")
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return {'name': row[0], 'weight_rsi': row[1], 'weight_macd': row[2], 'weight_ema': row[3], 'weight_vwap': row[4], 'weight_atr': row[5], 'weight_sentiment': row[6], 'min_confidence': row[7], 'min_risk_reward': row[8]}
+    return {'name':'Default','weight_rsi':0.25,'weight_macd':0.25,'weight_ema':0.15,'weight_vwap':0.15,'weight_atr':0.10,'weight_sentiment':0.10,'min_confidence':70,'min_risk_reward':2.5}
+
+def compute_signal(symbol, df, strategy):
+    if df is None or df.empty or len(df) < 30:
+        return None
+    latest = df.iloc[-1]
+    required = ['rsi','macd','macd_signal','ema20','vwap','atr']
+    for col in required:
+        if col not in df.columns or pd.isna(latest[col]):
+            return None
+    if latest['rsi'] < 30:
+        rsi_score = 100
+    elif latest['rsi'] > 70:
+        rsi_score = -100
+    else:
+        rsi_score = 50 + (50 - latest['rsi'])
+    macd_score = 80 if latest['macd'] > latest['macd_signal'] else -80
+    ema_score = 60 if latest['close'] > latest['ema20'] else -60
+    vwap_score = 50 if latest['close'] > latest['vwap'] else -50
+    atr_pct = latest['atr'] / latest['close'] * 100 if latest['close'] > 0 else 0
+    atr_penalty = min(20, atr_pct * 2)
+    weighted = (strategy['weight_rsi'] * rsi_score +
+                strategy['weight_macd'] * macd_score +
+                strategy['weight_ema'] * ema_score +
+                strategy['weight_vwap'] * vwap_score)
+    confidence = max(0, min(100, 50 + (weighted / 2) - atr_penalty))
+    side = 'BUY' if confidence >= 50 else 'SELL'
+    if confidence < strategy['min_confidence']:
+        return None
+    atr = latest['atr']
+    entry = latest['close']
+    if side == 'BUY':
+        stop_loss = entry - 2 * atr
+        take_profit = entry + 4 * atr
+    else:
+        stop_loss = entry + 2 * atr
+        take_profit = entry - 4 * atr
+    risk = abs(entry - stop_loss)
+    reward = abs(take_profit - entry)
+    risk_reward = reward / risk if risk > 0 else 0
+    if risk_reward < strategy['min_risk_reward']:
+        return None
+    return {
+        'symbol': symbol,
+        'side': side,
+        'entry': round(entry, 2),
+        'stop_loss': round(stop_loss, 2),
+        'take_profit': round(take_profit, 2),
+        'confidence': round(confidence, 1),
+        'risk_reward': round(risk_reward, 2),
+        'strategy': strategy['name']
+    }
+
+def save_trade(trade_data):
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute("INSERT INTO trades (symbol, side, entry_price, stop_loss, take_profit, size, confidence, risk_reward, strategy_used, opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              (trade_data['symbol'], trade_data['side'], trade_data['entry'], trade_data['stop_loss'], trade_data['take_profit'], trade_data.get('size', 0), trade_data['confidence'], trade_data['risk_reward'], trade_data['strategy'], datetime.now().isoformat()))
+    conn.commit()
+    trade_id = c.lastrowid
+    conn.close()
+    return trade_id
+
+def update_trade_outcome(trade_id, exit_price, success):
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute("SELECT entry_price, size FROM trades WHERE id = ?", (trade_id,))
+    row = c.fetchone()
+    if row:
+        entry, size = row
+        pnl = (exit_price - entry) * size
+        pnl_percent = (exit_price - entry) / entry * 100 if entry != 0 else 0
+        c.execute("UPDATE trades SET closed_at = ?, exit_price = ?, pnl = ?, pnl_percent = ?, success = ? WHERE id = ?",
+                  (datetime.now().isoformat(), exit_price, pnl, pnl_percent, success, trade_id))
+        conn.commit()
+    conn.close()
+
+def update_strategy_weights():
+    conn = sqlite3.connect("users.db")
+    df = pd.read_sql_query("SELECT strategy_used, success, confidence, risk_reward FROM trades WHERE closed_at IS NOT NULL ORDER BY id DESC LIMIT 100", conn)
+    conn.close()
+    if len(df) < 20:
+        return
+    winrate = df['success'].mean() if 'success' in df else 0
+    if winrate < 0.5:
+        conn = sqlite3.connect("users.db")
+        c = conn.cursor()
+        c.execute("UPDATE strategies SET weight_rsi = weight_rsi + 0.05 WHERE active = 1")
+        conn.commit()
+        conn.close()
+        logging.info(f"Strategian painoja päivitetty: winrate {winrate:.2f}")
+
+# ============================================================
+#  UUDET TELEGRAM-KOMENNOT (Trading 3.0)
+# ============================================================
+
+async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args:
+        await update.message.reply_text("⚠️ Käyttö: /signal <symbol> (esim. /signal BTC)")
+        return
+    symbol = args[0].upper()
+    await update.message.reply_text(f"📊 *Haetaan signaalia kohteelle {symbol}...*", parse_mode="Markdown")
+    df = get_ohlcv(symbol, source='binance')
+    if df is None or df.empty:
+        df = get_ohlcv(symbol, source='yfinance')
+    if df is None or df.empty:
+        await update.message.reply_text(f"⚠️ Dataa ei saatu kohteelle {symbol}")
+        return
+    df = calculate_indicators(df)
+    if df is None or df.empty:
+        await update.message.reply_text(f"⚠️ Indikaattoreita ei voitu laskea")
+        return
+    strategy = get_active_strategy()
+    signal = compute_signal(symbol, df, strategy)
+    if signal is None:
+        await update.message.reply_text(f"⚠️ Ei hyvää signaalia {symbol} (luottamus tai riski/tuotto liian matala)")
+        return
+    msg = f"🟢 *SIGNAL – {signal['symbol']}*\n"
+    msg += f"Suunta: {signal['side']}\n"
+    msg += f"Sisään: {signal['entry']:.2f}\n"
+    msg += f"Stop Loss: {signal['stop_loss']:.2f}\n"
+    msg += f"Take Profit: {signal['take_profit']:.2f}\n"
+    msg += f"Luottamus: {signal['confidence']:.1f}%\n"
+    msg += f"Riski–tuotto: 1:{signal['risk_reward']:.1f}\n"
+    msg += f"Strategia: {signal['strategy']}\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+    # Tallenna signaali tietokantaan (paper trading)
+    trade_id = save_trade(signal)
+    await update.message.reply_text(f"✅ Signaali tallennettu (ID: {trade_id})")
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = sqlite3.connect("users.db")
+    df = pd.read_sql_query("SELECT success, pnl FROM trades WHERE closed_at IS NOT NULL", conn)
+    conn.close()
+    if df.empty:
+        await update.message.reply_text("📊 Ei vielä suljettuja treidejä.")
+        return
+    wins = df[df['success'] == 1]
+    winrate = len(wins) / len(df) * 100 if len(df) > 0 else 0
+    total_pnl = df['pnl'].sum() if 'pnl' in df else 0
+    avg_pnl = df['pnl'].mean() if 'pnl' in df else 0
+    msg = f"📊 *Trading tilastot*\n━━━━━━━━━━━━━━━━━\n\n"
+    msg += f"Treidit: {len(df)}\n"
+    msg += f"Voittoprosentti: {winrate:.1f}%\n"
+    msg += f"Kokonais-PnL: {total_pnl:.2f} €\n"
+    msg += f"Keskimääräinen PnL: {avg_pnl:.2f} €\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def backtest_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📊 *Backtest – tulossa pian!* Tämä vaatii historiallista dataa. Palaa asiaan myöhemmin.", parse_mode="Markdown")
+
+async def strategy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute("SELECT name, description, weight_rsi, weight_macd, weight_ema, weight_vwap, weight_atr, min_confidence, min_risk_reward FROM strategies WHERE active=1 LIMIT 1")
+    row = c.fetchone()
+    conn.close()
+    if row:
+        msg = f"📊 *Aktiivinen strategia: {row[0]}*\n━━━━━━━━━━━━━━━━━\n\n"
+        msg += f"Kuvaus: {row[1]}\n"
+        msg += f"RSI-paino: {row[2]:.2f}\n"
+        msg += f"MACD-paino: {row[3]:.2f}\n"
+        msg += f"EMA-paino: {row[4]:.2f}\n"
+        msg += f"VWAP-paino: {row[5]:.2f}\n"
+        msg += f"ATR-paino: {row[6]:.2f}\n"
+        msg += f"Min. luottamus: {row[7]}%\n"
+        msg += f"Min. riski/tuotto: {row[8]:.1f}\n"
+    else:
+        msg = "⚠️ Aktiivista strategiaa ei löytynyt."
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+# ----- VANHAT KOMENNOT (2.0) -----
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     try:
@@ -746,7 +980,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"DB error: {e}")
     await update.message.reply_text(
         f"👋 *Hello, {user.first_name}!*\n\n"
-        "📊 *Aydaruus Invest AI 2.0* waa diyaar!\n\n"
+        "📊 *Aydaruus Invest AI 3.0* waa diyaar!\n\n"
         "📌 *Komennot:*\n"
         "/help - Kaikki komennot\n"
         "/check - Pikatarkistus\n"
@@ -772,6 +1006,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/fear - Fear & Greed\n"
         "/report - Koko raportti\n"
         "/testreport - Testaa aamuraportti\n\n"
+        "🆕 *UUDET 3.0 -TRADING-KOMENNOT:*\n"
+        "/signal <symbol> - Hae signaali\n"
+        "/stats - Treiditilastot\n"
+        "/backtest - Testaa strategiaa (tulossa)\n"
+        "/strategy - Näytä aktiivinen strategia\n\n"
         "💰 Aamuraportti klo 9:00 automaattisesti.",
         parse_mode="Markdown"
     )
@@ -805,14 +1044,19 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/whales - Valaiden siirrot\n"
         "/fear - Fear & Greed\n"
         "/report - Päivän raportti\n"
-        "/testreport - Testaa raportti",
+        "/testreport - Testaa raportti\n\n"
+        "🆕 *3.0 TRADING:*\n"
+        "/signal <symbol> - Kaupankäyntisignaali\n"
+        "/stats - Treiditilastot\n"
+        "/backtest - Backtest (tulossa)\n"
+        "/strategy - Nykyinen strategia",
         parse_mode="Markdown"
     )
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🏓 Pong!")
 
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def stats_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM users")
@@ -1144,16 +1388,17 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 flask_app = Flask(__name__)
 @flask_app.route('/')
 def health_check():
-    return "🤖 Aydaruus Invest AI 2.0 bot is running!", 200
+    return "🤖 Aydaruus Invest AI 3.0 bot is running!", 200
 def run_flask():
     flask_app.run(host='0.0.0.0', port=PORT, debug=False)
 
 def run_bot():
     app = Application.builder().token(TOKEN).build()
+    # Vanhat komennot
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ping", ping))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("stats", stats_users))
     app.add_handler(CommandHandler("check", check))
     app.add_handler(CommandHandler("portfolio", portfolio))
     app.add_handler(CommandHandler("etfs", etfs))
@@ -1178,6 +1423,11 @@ def run_bot():
     app.add_handler(CommandHandler("testreport", testreport))
     app.add_handler(CommandHandler("scam", scam_command))
     app.add_handler(CommandHandler("listing", listing_command))
+    # Uudet 3.0 -komennot
+    app.add_handler(CommandHandler("signal", signal_command))
+    app.add_handler(CommandHandler("stats", stats_command))  # huom! korvaa vanhan stats-komennon
+    app.add_handler(CommandHandler("backtest", backtest_command))
+    app.add_handler(CommandHandler("strategy", strategy_command))
     app.add_error_handler(error_handler)
     app.run_polling()
 
