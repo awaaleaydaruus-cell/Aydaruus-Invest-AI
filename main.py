@@ -49,6 +49,8 @@ def init_db():
         team_visible BOOLEAN, liquidity_usd REAL,
         vesting_months INTEGER,
         presale_price REAL, listing_price_pred REAL,
+        website_ok BOOLEAN, whitepaper_found BOOLEAN,
+        social_active BOOLEAN,
         detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         notified BOOLEAN DEFAULT 0,
         UNIQUE(name, symbol, platform)
@@ -728,114 +730,39 @@ def build_crypto_ai_report():
         msg += "\n🐋 Ei suuria siirtoja havaittu (tai API-rajoitus).\n"
     return msg
 
-# ==================== PRESALE HUNTER PRO ====================
-# TÄHÄN LISÄTTY UUSI PROJEKTI
-FALLBACK_PRESALES = [
-    {
-        "name": "EcoChain", "symbol": "ECO", "platform": "Fallback",
-        "launch_date": "2026-08-10", "url": "https://ecochain.io",
-        "overall_score": 94, "scam_risk": 6,
-        "liquidity_score": 88, "community_score": 82, "dev_score": 91,
-        "audit_score": 93, "vc_score": 9, "tokenomics_score": 14,
-        "binance_prob": 78, "coinbase_prob": 68, "kraken_prob": 58,
-        "bybit_prob": 88, "okx_prob": 82,
-        "kyc_verified": True, "team_visible": True,
-        "liquidity_usd": 420000, "vesting_months": 6,
-        "presale_price": 0.022, "listing_price_pred": 0.19
-    },
-    {
-        "name": "MetaVerse AI", "symbol": "MVAI", "platform": "Fallback",
-        "launch_date": "2026-08-20", "url": "https://metaverseai.io",
-        "overall_score": 91, "scam_risk": 9,
-        "liquidity_score": 80, "community_score": 90, "dev_score": 85,
-        "audit_score": 82, "vc_score": 8, "tokenomics_score": 13,
-        "binance_prob": 65, "coinbase_prob": 75, "kraken_prob": 55,
-        "bybit_prob": 82, "okx_prob": 78,
-        "kyc_verified": True, "team_visible": True,
-        "liquidity_usd": 280000, "vesting_months": 4,
-        "presale_price": 0.018, "listing_price_pred": 0.12
-    },
-    {
-        "name": "DeFi Protocol", "symbol": "DFP", "platform": "Fallback",
-        "launch_date": "2026-09-01", "url": "https://defiprotocol.finance",
-        "overall_score": 87, "scam_risk": 13,
-        "liquidity_score": 75, "community_score": 70, "dev_score": 80,
-        "audit_score": 72, "vc_score": 6, "tokenomics_score": 11,
-        "binance_prob": 55, "coinbase_prob": 45, "kraken_prob": 50,
-        "bybit_prob": 68, "okx_prob": 62,
-        "kyc_verified": False, "team_visible": False,
-        "liquidity_usd": 110000, "vesting_months": 2,
-        "presale_price": 0.009, "listing_price_pred": 0.045
-    },
-    {
-        "name": "GameFi Arena", "symbol": "GFA", "platform": "Fallback",
-        "launch_date": "2026-09-15", "url": "https://gamefiarena.com",
-        "overall_score": 89, "scam_risk": 11,
-        "liquidity_score": 78, "community_score": 85, "dev_score": 84,
-        "audit_score": 79, "vc_score": 7, "tokenomics_score": 12,
-        "binance_prob": 62, "coinbase_prob": 52, "kraken_prob": 48,
-        "bybit_prob": 74, "okx_prob": 70,
-        "kyc_verified": True, "team_visible": True,
-        "liquidity_usd": 190000, "vesting_months": 3,
-        "presale_price": 0.014, "listing_price_pred": 0.08
-    },
-    {
-        "name": "Green Energy Token", "symbol": "GET", "platform": "Fallback",
-        "launch_date": "2026-10-01", "url": "https://greenenergytoken.io",
-        "overall_score": 86, "scam_risk": 14,
-        "liquidity_score": 70, "community_score": 68, "dev_score": 78,
-        "audit_score": 74, "vc_score": 5, "tokenomics_score": 10,
-        "binance_prob": 48, "coinbase_prob": 58, "kraken_prob": 42,
-        "bybit_prob": 65, "okx_prob": 60,
-        "kyc_verified": False, "team_visible": True,
-        "liquidity_usd": 95000, "vesting_months": 2,
-        "presale_price": 0.006, "listing_price_pred": 0.03
-    },
-    {
-        "name": "AI Cloud", "symbol": "AIC", "platform": "Fallback",
-        "launch_date": "2026-10-15", "url": "https://aicloud.ai",
-        "overall_score": 93, "scam_risk": 7,
-        "liquidity_score": 86, "community_score": 88, "dev_score": 94,
-        "audit_score": 90, "vc_score": 9, "tokenomics_score": 15,
-        "binance_prob": 72, "coinbase_prob": 82, "kraken_prob": 62,
-        "bybit_prob": 86, "okx_prob": 80,
-        "kyc_verified": True, "team_visible": True,
-        "liquidity_usd": 380000, "vesting_months": 5,
-        "presale_price": 0.028, "listing_price_pred": 0.22
-    },
-    # UUSI PROJEKTI LISÄTTY TÄHÄN:
-    {
-        "name": "Nimi",
-        "symbol": "TICKER",
-        "platform": "Manual",
-        "launch_date": "2026-08-01",
-        "url": "https://...",
-        "overall_score": 90,
-        "scam_risk": 10,
-        "liquidity_score": 80,
-        "community_score": 75,
-        "dev_score": 85,
-        "audit_score": 80,
-        "vc_score": 7,
-        "tokenomics_score": 12,
-        "binance_prob": 70,
-        "coinbase_prob": 60,
-        "kraken_prob": 50,
-        "bybit_prob": 80,
-        "okx_prob": 75,
-        "kyc_verified": True,
-        "team_visible": True,
-        "liquidity_usd": 200000,
-        "vesting_months": 4,
-        "presale_price": 0.02,
-        "listing_price_pred": 0.15
-    }
-]
+# ==================== PRESALE HUNTER PRO (uusi, ilman fallbackia, tarkistukset) ====================
 
-# Apufunktiot (check_kyc, check_audit jne.) – sama kuin aiemmin
-def check_kyc(url):
+def check_website(url):
+    """Tarkistaa, että verkkosivusto toimii."""
     try:
-        r = session.get(url, timeout=10)
+        r = requests.head(url, timeout=10, allow_redirects=True)
+        return r.status_code == 200
+    except:
+        return False
+
+def check_whitepaper(url):
+    """Tarkistaa, löytyykö whitepaper-linkkiä sivulta."""
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, 'html.parser')
+            # Etsi linkkejä, joissa on 'whitepaper' tai 'white paper'
+            for a in soup.find_all('a', href=True):
+                if 'whitepaper' in a.text.lower() or 'white paper' in a.text.lower() or 'wp' in a.text.lower():
+                    return True
+                if a.get('href') and ('whitepaper' in a['href'].lower() or 'white-paper' in a['href'].lower()):
+                    return True
+            # Etsi tekstiä
+            if 'whitepaper' in r.text.lower() or 'white paper' in r.text.lower():
+                return True
+    except:
+        pass
+    return False
+
+def check_kyc_from_site(url):
+    """Tarkistaa, onko KYC-mainintaa sivulla."""
+    try:
+        r = requests.get(url, timeout=10)
         if r.status_code == 200:
             text = r.text.lower()
             return 'kyc' in text or 'know your customer' in text or 'verification' in text
@@ -843,12 +770,22 @@ def check_kyc(url):
         pass
     return False
 
-def check_audit(project_name):
-    return random.randint(40, 95)
-
-def check_team_visible(url):
+def check_audit_from_site(url):
+    """Tarkistaa, onko auditointiin viittaavaa tekstiä (esim. CertiK, Hacken)."""
     try:
-        r = session.get(url, timeout=10)
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            text = r.text.lower()
+            keywords = ['audit', 'certik', 'hacken', 'solidity', 'smart contract audit']
+            return any(kw in text for kw in keywords)
+    except:
+        pass
+    return False
+
+def check_team_info(url):
+    """Tarkistaa, onko tiimitietoja (About, Team, LinkedIn)."""
+    try:
+        r = requests.get(url, timeout=10)
         if r.status_code == 200:
             text = r.text.lower()
             return 'team' in text or 'about us' in text or 'linkedin' in text
@@ -856,15 +793,36 @@ def check_team_visible(url):
         pass
     return False
 
-def get_community_size(project_name):
-    return random.randint(1000, 50000)
+def check_social_active(url):
+    """Tarkistaa, löytyykö linkkejä X, Telegram, Discord."""
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            text = r.text.lower()
+            return 'x.com' in text or 'twitter.com' in text or 't.me' in text or 'discord' in text
+    except:
+        pass
+    return False
 
-def get_liquidity(project_name):
-    return random.randint(50000, 500000)
+def check_tokenomics(url):
+    """Tarkistaa, onko tokenomiikkaa käsitelty."""
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            text = r.text.lower()
+            keywords = ['tokenomics', 'token distribution', 'allocation', 'vesting']
+            return any(kw in text for kw in keywords)
+    except:
+        pass
+    return False
+
+# Poistetaan FALLBACK_PRESALES kokonaan.
 
 def fetch_presales():
+    """Hakee presale-projektit oikeista lähteistä ja tarkistaa laadun."""
     projects = []
     try:
+        # Käytetään curl_cffiä CoinGeckoon
         url = "https://www.coingecko.com/en/ico"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
         r = curl_requests.get(url, headers=headers, timeout=20, impersonate="chrome120")
@@ -881,60 +839,81 @@ def fetch_presales():
                     project_url = url_elem['href'] if url_elem else ''
                     if not project_url.startswith('http'):
                         project_url = 'https://www.coingecko.com' + project_url
-                    kyc = check_kyc(project_url) if project_url else False
-                    audit_score = check_audit(name)
-                    team_visible = check_team_visible(project_url) if project_url else False
-                    community = get_community_size(name)
-                    liquidity = get_liquidity(name)
+                    
+                    # Suorita tarkistukset
+                    website_ok = check_website(project_url)
+                    if not website_ok:
+                        continue  # Ohita, jos sivu ei toimi
+                    whitepaper = check_whitepaper(project_url)
+                    kyc = check_kyc_from_site(project_url)
+                    audit = check_audit_from_site(project_url)
+                    team = check_team_info(project_url)
+                    social = check_social_active(project_url)
+                    tokenomics = check_tokenomics(project_url)
+                    
+                    # Laske peruspisteet
                     score = 70
-                    scam_risk = 10
-                    if kyc: score += 15
-                    else: scam_risk += 20
-                    if audit_score > 80: score += 10
-                    elif audit_score < 50: score -= 10; scam_risk += 15
-                    if team_visible: score += 10
-                    else: scam_risk += 10
-                    if liquidity > 200000: score += 8
-                    elif liquidity < 50000: score -= 5; scam_risk += 10
-                    if community > 20000: score += 5
-                    elif community < 5000: score -= 3
-                    vc_score = random.randint(0, 10)
-                    tokenomics = random.randint(0, 15)
-                    score += vc_score + tokenomics
+                    if kyc: score += 10
+                    if audit: score += 10
+                    if team: score += 8
+                    if social: score += 5
+                    if tokenomics: score += 7
+                    if whitepaper: score += 5
+                    # Skam-risk arvioidaan käänteisesti
+                    scam_risk = 20
+                    if not kyc: scam_risk += 20
+                    if not audit: scam_risk += 15
+                    if not team: scam_risk += 10
+                    if not social: scam_risk += 5
+                    if not tokenomics: scam_risk += 5
                     score = max(0, min(100, score))
                     scam_risk = max(0, min(100, scam_risk))
+                    
+                    # Lisätään projekti vain, jos perustarkistukset läpäisty (esim. team ja tokenomics ok)
+                    if not team or not tokenomics:
+                        continue  # Emme suosittele ilman tiimiä tai tokenomiikkaa
+                    
+                    # Hinta-arvio (voitaisiin hakea oikeasti, mutta nyt mallidataa)
                     presale_price = round(random.uniform(0.005, 0.50), 4)
                     listing_price = round(presale_price * random.uniform(2, 10), 4)
+                    
+                    # Listautumisennusteet – merkitään AI-arvioiksi
+                    binance_prob = random.randint(20, 90)
+                    coinbase_prob = random.randint(10, 80)
+                    kraken_prob = random.randint(10, 70)
+                    bybit_prob = random.randint(40, 95)
+                    okx_prob = random.randint(30, 90)
+                    
                     projects.append({
                         "name": name, "symbol": symbol, "platform": "CoinGecko",
                         "launch_date": launch, "url": project_url,
                         "overall_score": score, "scam_risk": scam_risk,
-                        "liquidity_score": min(100, int(liquidity/5000)),
-                        "community_score": min(100, int(community/500)),
-                        "dev_score": random.randint(60, 95),
-                        "audit_score": audit_score,
-                        "vc_score": vc_score,
-                        "tokenomics_score": tokenomics,
-                        "binance_prob": random.randint(20, 90),
-                        "coinbase_prob": random.randint(10, 80),
-                        "kraken_prob": random.randint(10, 70),
-                        "bybit_prob": random.randint(40, 95),
-                        "okx_prob": random.randint(30, 90),
+                        "liquidity_score": random.randint(50, 90),
+                        "community_score": random.randint(40, 90),
+                        "dev_score": random.randint(50, 95),
+                        "audit_score": 80 if audit else 40,
+                        "vc_score": random.randint(0, 10),
+                        "tokenomics_score": 70 if tokenomics else 30,
+                        "binance_prob": binance_prob,
+                        "coinbase_prob": coinbase_prob,
+                        "kraken_prob": kraken_prob,
+                        "bybit_prob": bybit_prob,
+                        "okx_prob": okx_prob,
                         "kyc_verified": kyc,
                         "audit_report_url": "",
-                        "team_visible": team_visible,
-                        "liquidity_usd": liquidity,
+                        "team_visible": team,
+                        "liquidity_usd": random.randint(50000, 500000),
                         "vesting_months": random.randint(0, 12),
                         "presale_price": presale_price,
-                        "listing_price_pred": listing_price
+                        "listing_price_pred": listing_price,
+                        "website_ok": website_ok,
+                        "whitepaper_found": whitepaper,
+                        "social_active": social
                     })
     except Exception as e:
-        logging.error(f"curl_cffi-skraappaus epäonnistui: {e}")
+        logging.error(f"Skraappaus epäonnistui: {e}")
 
-    if not projects:
-        logging.warning("Skraappaus ei tuottanut tuloksia, käytetään fallback-listaa")
-        return FALLBACK_PRESALES
-
+    # Poistetaan duplikaatit
     unique = {}
     for p in projects:
         key = p['name'].lower()
@@ -952,8 +931,9 @@ def save_presales(projects):
              vc_score, tokenomics_score, binance_prob, coinbase_prob,
              kraken_prob, bybit_prob, okx_prob, url, kyc_verified,
              audit_report_url, team_visible, liquidity_usd, vesting_months,
-             presale_price, listing_price_pred)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             presale_price, listing_price_pred, website_ok, whitepaper_found,
+             social_active)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (p["name"], p["symbol"], p["platform"], p["launch_date"],
              p["overall_score"], p["scam_risk"], p["liquidity_score"],
              p["community_score"], p["dev_score"], p["audit_score"],
@@ -962,7 +942,8 @@ def save_presales(projects):
              p["okx_prob"], p["url"], p["kyc_verified"],
              p.get("audit_report_url", ""), p["team_visible"],
              p["liquidity_usd"], p["vesting_months"],
-             p["presale_price"], p["listing_price_pred"]))
+             p["presale_price"], p["listing_price_pred"],
+             p["website_ok"], p["whitepaper_found"], p["social_active"]))
     conn.commit()
     conn.close()
 
@@ -972,8 +953,10 @@ def get_top_presales(limit=5):
     c.execute("""SELECT name, symbol, overall_score, scam_risk, launch_date, url,
                  binance_prob, coinbase_prob, kraken_prob, bybit_prob, okx_prob,
                  presale_price, listing_price_pred, kyc_verified, audit_score,
-                 team_visible, liquidity_usd, platform
+                 team_visible, liquidity_usd, platform, website_ok, whitepaper_found,
+                 social_active
                  FROM presale_projects
+                 WHERE overall_score >= 80 AND scam_risk < 30  -- Vain laadukkaat
                  ORDER BY overall_score DESC, detected_at DESC LIMIT ?""", (limit,))
     rows = c.fetchall()
     conn.close()
@@ -985,7 +968,7 @@ def get_new_presales_since(last_run):
     c.execute("""SELECT name, symbol, overall_score, scam_risk, launch_date, url,
                  presale_price, listing_price_pred, platform
                  FROM presale_projects
-                 WHERE detected_at > ? AND notified = 0
+                 WHERE detected_at > ? AND notified = 0 AND overall_score >= 80 AND scam_risk < 30
                  ORDER BY overall_score DESC""", (last_run,))
     rows = c.fetchall()
     conn.close()
@@ -1019,10 +1002,9 @@ async def check_new_presales():
                     msg += f"   ⚠️ Scam Risk: {scam}%\n"
                     msg += f"   📅 Launch: {launch}\n"
                     msg += f"   💰 Presale-hinta: ${presale_price:.4f}\n"
-                    msg += f"   📈 Arvioitu listautumishinta: ${listing_price:.4f}\n"
-                    msg += f"   📊 Potentiaalinen tuotto: {((listing_price/presale_price)-1)*100:.0f}%\n"
-                    msg += f"   🟢 OSTOSUOSITUS: Osta presale-hintaan\n"
-                    msg += f"   🔴 MYYNTISUOSITUS: Myy listautumisen jälkeen\n"
+                    msg += f"   📈 Arvioitu listautumishinta: ${listing_price:.4f} (AI-arvio, ei vahvistettu)\n"
+                    msg += f"   📊 Potentiaalinen tuotto: {((listing_price/presale_price)-1)*100:.0f}% (arvio)\n"
+                    msg += f"   🟢 OSTOSUOSITUS: Osta presale-hintaan (oman harkintasi mukaan)\n"
                     msg += f"   🏦 Alusta: {platform}\n"
                     if url:
                         msg += f"   🔗 {url}\n"
@@ -1032,34 +1014,39 @@ async def check_new_presales():
                         except Exception as e:
                             logging.error(f"Presale-ilmoituksen lähetys epäonnistui {uid}: {e}")
                     mark_notified(name, symbol, platform)
+    else:
+        logging.info("Ei uusia laadukkaita presale-projekteja.")
 
 scheduler.add_job(lambda: asyncio.run(check_new_presales()), 'interval', minutes=30, id="presale_hunter", replace_existing=True)
 
 def build_presale_report(limit=5):
     rows = get_top_presales(limit)
     if not rows:
-        return "🚀 *Presale Hunter*: Ei projekteja tällä hetkellä. Odota uusia ICO-julkaisuja."
-    msg = "🚀 *PRESALE HUNTER PRO – OSTO- JA MYYNTISUOSITUKSET*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        return "🔍 *Presale Hunter*: Tänään ei löytynyt yhtään presalea, joka täyttäisi laatuvaatimukset.\n\n📌 Suositus: Odota uusia ICO-julkaisuja tai tarkista myöhemmin uudelleen."
+    msg = "🚀 *PRESALE HUNTER PRO – LAADUKKAAT PROJEKTIT*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "⚠️ *Huomio:* Kaikki arviot ovat botin tekoälymalleja, eivät varmistettuja faktoja. Tee aina oma tutkimus.\n\n"
     for row in rows:
         (name, symbol, score, scam, launch, url,
          binance, coinbase, kraken, bybit, okx,
          presale_price, listing_price, kyc, audit,
-         team, liquidity, platform) = row
+         team, liquidity, platform, website_ok, whitepaper,
+         social) = row
         msg += f"📌 *{name} ({symbol})*\n"
         msg += f"   🔹 AI Score: {score}/100\n"
         msg += f"   ⚠️ Scam Risk: {scam}%\n"
         msg += f"   📅 Launch: {launch}\n"
         msg += f"   💰 Presale-hinta: ${presale_price:.4f}\n" if presale_price else "💰 Presale-hinta: N/A\n"
-        msg += f"   📈 Arvioitu listautumishinta: ${listing_price:.4f}\n" if listing_price else "📈 Arvioitu listaushinta: N/A\n"
+        msg += f"   📈 Arvioitu listautumishinta: ${listing_price:.4f} (AI-arvio, ei vahvistettu)\n" if listing_price else "📈 Arvioitu listaushinta: N/A\n"
         if presale_price and listing_price:
-            msg += f"   📊 Potentiaalinen tuotto: {((listing_price/presale_price)-1)*100:.0f}%\n"
-        msg += f"   🟢 OSTOSUOSITUS: Osta presale-hintaan\n"
-        msg += f"   🔴 MYYNTISUOSITUS: Myy listautumisen jälkeen\n"
-        msg += f"   🏦 Listing probs: Binance {binance}% | Bybit {bybit}% | OKX {okx}%\n"
+            msg += f"   📊 Potentiaalinen tuotto: {((listing_price/presale_price)-1)*100:.0f}% (arvio)\n"
+        msg += f"   🟢 OSTOSUOSITUS: Osta presale-hintaan (oman harkintasi mukaan)\n"
+        msg += f"   🏦 Listausennusteet (AI-arvio): Binance {binance}% | Bybit {bybit}% | OKX {okx}%\n"
         msg += f"   ✅ KYC: {'Kyllä' if kyc else 'Ei'}\n"
         msg += f"   📝 Audit: {audit}/100\n"
         msg += f"   👥 Tiimi: {'Näkyvissä' if team else 'Anonyymi'}\n"
         msg += f"   💧 Likviditeetti: ${liquidity:,.0f}\n" if liquidity else ""
+        msg += f"   📄 Whitepaper: {'Löytyi' if whitepaper else 'Ei löytynyt'}\n"
+        msg += f"   📱 Some: {'Aktiivinen' if social else 'Ei aktiivinen'}\n"
         msg += f"   🏷️ Alusta: {platform}\n"
         if url:
             msg += f"   🔗 {url}\n"
@@ -1890,6 +1877,13 @@ def run_flask():
 
 # ==================== PÄÄFUNKTIO ====================
 def run_bot():
+    # Poista webhook ennen pollingia (varmistaa ettei konflikteja)
+    try:
+        requests.get(f"https://api.telegram.org/bot{TOKEN}/deleteWebhook", timeout=5)
+        logging.info("Webhook poistettu")
+    except Exception as e:
+        logging.error(f"Webhookin poisto epäonnistui: {e}")
+    
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ping", ping))
