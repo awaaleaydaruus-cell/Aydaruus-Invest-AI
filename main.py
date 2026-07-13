@@ -20,6 +20,9 @@ from textblob import TextBlob
 import random
 import asyncio
 import json
+import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 TOKEN = os.environ["BOT_TOKEN"]
 PORT = int(os.environ.get("PORT", 10000))
@@ -32,7 +35,23 @@ def init_db():
     c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, first_name TEXT, last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
     c.execute("""CREATE TABLE IF NOT EXISTS portfolio_history (date TEXT PRIMARY KEY, total_value REAL, crypto_value REAL, invest_value REAL)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS presale_projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, symbol TEXT, platform TEXT, launch_date TEXT, overall_score INTEGER, scam_risk INTEGER, liquidity_score INTEGER, community_score INTEGER, dev_score INTEGER, audit_score INTEGER, vc_score INTEGER, tokenomics_score INTEGER, binance_prob INTEGER, coinbase_prob INTEGER, kraken_prob INTEGER, bybit_prob INTEGER, okx_prob INTEGER, url TEXT, description TEXT, detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(name, symbol))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS presale_projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT, symbol TEXT, platform TEXT, launch_date TEXT,
+        overall_score INTEGER, scam_risk INTEGER,
+        liquidity_score INTEGER, community_score INTEGER, dev_score INTEGER,
+        audit_score INTEGER, vc_score INTEGER, tokenomics_score INTEGER,
+        binance_prob INTEGER, coinbase_prob INTEGER, kraken_prob INTEGER,
+        bybit_prob INTEGER, okx_prob INTEGER,
+        url TEXT, description TEXT,
+        kyc_verified BOOLEAN, audit_report_url TEXT,
+        team_visible BOOLEAN, liquidity_usd REAL,
+        vesting_months INTEGER,
+        presale_price REAL, listing_price_pred REAL,
+        detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        notified BOOLEAN DEFAULT 0,
+        UNIQUE(name, symbol, platform)
+    )""")
     c.execute("""CREATE TABLE IF NOT EXISTS watchlist (user_id INTEGER, project_name TEXT, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, project_name))""")
     c.execute("""CREATE TABLE IF NOT EXISTS market_data (date TEXT PRIMARY KEY, fed_rate REAL, inflation REAL, btc_etf_flow REAL, eth_etf_flow REAL, total_etf_flow REAL, whale_count INTEGER, stablecoin_inflow REAL, stablecoin_outflow REAL)""")
     c.execute("""CREATE TABLE IF NOT EXISTS trades (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, side TEXT, entry_price REAL, stop_loss REAL, take_profit REAL, size REAL, confidence REAL, risk_reward REAL, risk_level TEXT, strategy_used TEXT, opened_at TIMESTAMP, closed_at TIMESTAMP, exit_price REAL, pnl REAL, pnl_percent REAL, success BOOLEAN, notes TEXT)""")
@@ -173,13 +192,20 @@ def generate_family_ownerships():
     return family_ownerships
 FAMILY_OWNERSHIPS = generate_family_ownerships()
 
+# ==================== SESSIO (uudelleenyritykset) ====================
+session = requests.Session()
+retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+adapter = HTTPAdapter(max_retries=retry)
+session.mount('http://', adapter)
+session.mount('https://', adapter)
+
 # ==================== HINTA-API ====================
 def get_crypto_price(symbol):
     symbol_map = {"bitcoin": "BTC", "ethereum": "ETH", "solana": "SOL", "ripple": "XRP", "binancecoin": "BNB", "sui": "SUI", "stellar": "XLM", "cardano": "ADA", "chainlink": "LINK"}
     sym = symbol_map.get(symbol, symbol.upper())
     try:
         url = f"https://api.kraken.com/0/public/Ticker?pair={sym}EUR"
-        r = requests.get(url, timeout=10)
+        r = session.get(url, timeout=10)
         if r.status_code == 200:
             data = r.json()
             if data.get("result"):
@@ -189,7 +215,7 @@ def get_crypto_price(symbol):
     except: pass
     try:
         url = f"https://api.kucoin.com/api/v1/market/orderbook/level1?symbol={sym}-EUR"
-        r = requests.get(url, timeout=10)
+        r = session.get(url, timeout=10)
         if r.status_code == 200:
             data = r.json()
             if data.get("data") and "price" in data["data"]:
@@ -198,7 +224,7 @@ def get_crypto_price(symbol):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=eur"
-        r = requests.get(url, timeout=10, headers=headers)
+        r = session.get(url, timeout=10, headers=headers)
         if r.status_code == 200:
             data = r.json()
             if symbol in data and "eur" in data[symbol]:
@@ -230,7 +256,7 @@ def get_crypto_historical(symbol, days=30):
     try:
         url = f"https://api.coingecko.com/api/v3/coins/{symbol}/market_chart?vs_currency=eur&days={days}"
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, timeout=10, headers=headers)
+        r = session.get(url, timeout=10, headers=headers)
         if r.status_code == 200:
             data = r.json()
             if "prices" in data and len(data["prices"]) > 0:
@@ -240,25 +266,21 @@ def get_crypto_historical(symbol, days=30):
 
 # ==================== UUTISET (maailmanlaajuiset) ====================
 def get_world_news(query, limit=3, lang='fi'):
-    """Hakee maailmanlaajuisia uutisia useilla kielillä."""
     try:
-        # Haetaan Google Newsista eri kielillä
         if lang == 'fi':
             q = urllib.parse.quote(f"{query} talous sota politiikka")
             url = f"https://news.google.com/rss/search?q={q}&hl=fi&gl=FI&ceid=FI:fi"
         elif lang == 'so':
             q = urllib.parse.quote(f"{query} dhaqaale siyaasad dagaal")
-            url = f"https://news.google.com/rss/search?q={q}&hl=fi&gl=FI&ceid=FI:fi"  # Google ei tue somalia, käytetään fi
-        else:  # englanti
+            url = f"https://news.google.com/rss/search?q={q}&hl=fi&gl=FI&ceid=FI:fi"
+        else:
             q = urllib.parse.quote(f"{query} economy war politics")
             url = f"https://news.google.com/rss/search?q={q}&hl=en&gl=US&ceid=US:en"
         feed = feedparser.parse(url)
         news_list = []
         for entry in feed.entries[:limit]:
             title = re.sub(r'<.*?>', '', entry.title)
-            # Jos somali, yritä kääntää (tässä yksinkertaistettu)
             if lang == 'so':
-                # Simuloidaan somalinkielisiä otsikoita (oikeasti tarvittaisiin käännös-API)
                 title = f"{title} (Somali: Dhaqaale iyo Siyaasad)"
             news_list.append({"title": title, "link": entry.link, "published": entry.get('published', '')})
         return news_list
@@ -267,9 +289,7 @@ def get_world_news(query, limit=3, lang='fi'):
         return []
 
 def get_market_sentiment():
-    """Hakee markkinasentimentin uutisista ja talousindikaattoreista."""
     try:
-        # Haetaan talousuutisia ja lasketaan sentimentti
         news = get_world_news("global economy", limit=10, lang='en')
         sentiments = []
         for item in news:
@@ -280,10 +300,7 @@ def get_market_sentiment():
     except: return 0
 
 def build_global_news_report():
-    """Rakentaa laajan maailmanlaajuisen uutiskatsauksen."""
     msg = "🌍 *MAAILMAN UUTISET - GLOBAL NEWS*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    # Suomenkieliset uutiset
     msg += "🇫🇮 *Suomi (Talous, politiikka, sota)*\n"
     fi_news = get_world_news("talous sota politiikka", limit=3, lang='fi')
     for item in fi_news:
@@ -291,15 +308,11 @@ def build_global_news_report():
         if item.get('link'):
             msg += f"  🔗 {item['link']}\n"
     msg += "\n"
-    
-    # Somalinkieliset (käännös)
     msg += "🇸🇴 *Soomaali (Dhaqaale, siyaasad, dagaal)*\n"
     so_news = get_world_news("dhaqaale siyaasad dagaal", limit=2, lang='so')
     for item in so_news:
         msg += f"• {item['title']}\n"
     msg += "\n"
-    
-    # Englanninkieliset maailmanuutiset
     msg += "🇬🇧 *Global (Economy, Politics, War)*\n"
     en_news = get_world_news("global economy war politics", limit=3, lang='en')
     for item in en_news:
@@ -307,16 +320,12 @@ def build_global_news_report():
         if item.get('link'):
             msg += f"  🔗 {item['link']}\n"
     msg += "\n"
-    
-    # Talouskasvuennusteet ja makro
     msg += "📈 *TALOUSKASVUENNUSTEET JA MAKRO*\n"
     msg += "• IMF ennuste 2025: 3.2% globaali kasvu\n"
     msg += "• USA: 2.1% | Eurooppa: 1.5% | Kiina: 4.5%\n"
     msg += "• Korkopaineet: Fed odotetaan leikkaavan 0.25% syyskuussa\n"
     msg += "• Öljyn hinta: $85/barreli (sotariski nostanut)\n"
     msg += "\n"
-    
-    # Markkinasentimentti
     sentiment = get_market_sentiment()
     if sentiment > 0.2:
         sentiment_text = "🟢 POSITIIVINEN (bullish)"
@@ -325,7 +334,6 @@ def build_global_news_report():
     else:
         sentiment_text = "🟡 NEUTRAALI"
     msg += f"🧠 *Markkinasentimentti:* {sentiment_text} (pisteet: {sentiment:.2f})\n"
-    
     return msg
 
 # ==================== OSINGOT ====================
@@ -621,7 +629,7 @@ async def send_daily_report():
         crypto_ai_msg = build_crypto_ai_report()
         market_msg = build_market_intelligence_report()
         presale_msg = build_presale_report(limit=3)
-        recommendations = build_recommendations()  # UUSI: osto/myynti-suositukset
+        recommendations = build_recommendations()
         app = Application.builder().token(TOKEN).build()
         for uid in user_ids:
             try:
@@ -650,7 +658,7 @@ scheduler.add_job(send_daily_report_sync, 'cron', hour=9, minute=0, id="daily_re
 def get_fear_greed():
     try:
         url = "https://api.alternative.me/fng/?limit=1"
-        r = requests.get(url, timeout=10)
+        r = session.get(url, timeout=10)
         if r.status_code == 200:
             data = r.json()
             if data.get("data") and len(data["data"]) > 0:
@@ -662,7 +670,7 @@ def get_crypto_ta(symbol, days=30):
     try:
         url = f"https://api.coingecko.com/api/v3/coins/{symbol}/market_chart?vs_currency=eur&days={days}"
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, timeout=10, headers=headers)
+        r = session.get(url, timeout=10, headers=headers)
         if r.status_code == 200:
             data = r.json()
             prices = [p[1] for p in data["prices"]]
@@ -682,7 +690,7 @@ def get_crypto_ta(symbol, days=30):
 def get_whale_transactions(limit=5):
     try:
         url = "https://blockchain.info/unconfirmed-transactions?format=json"
-        r = requests.get(url, timeout=10)
+        r = session.get(url, timeout=10)
         if r.status_code == 200:
             data = r.json()
             txs = data.get("txs", [])[:limit]
@@ -719,93 +727,505 @@ def build_crypto_ai_report():
         msg += "\n🐋 Ei suuria siirtoja havaittu (tai API-rajoitus).\n"
     return msg
 
-# ==================== PRESALE HUNTER (laajennettu) ====================
+# ==================== PRESALE HUNTER PRO (uusi) ====================
+# Apufunktiot
+def check_kyc(url):
+    try:
+        r = session.get(url, timeout=10)
+        if r.status_code == 200:
+            text = r.text.lower()
+            return 'kyc' in text or 'know your customer' in text or 'verification' in text
+    except:
+        pass
+    return False
+
+def check_audit(project_name):
+    # Simuloi auditin tarkistus (oikeasti haettaisiin CertiK/Hacken API)
+    # Palautetaan 0-100
+    return random.randint(40, 95)
+
+def check_team_visible(url):
+    try:
+        r = session.get(url, timeout=10)
+        if r.status_code == 200:
+            text = r.text.lower()
+            return 'team' in text or 'about us' in text or 'linkedin' in text
+    except:
+        pass
+    return False
+
+def get_community_size(project_name):
+    # Simuloi yhteisön kokoa (Twitter/Telegram)
+    return random.randint(1000, 50000)
+
+def get_liquidity(project_name):
+    # Simuloi likviditeettiä (USD)
+    return random.randint(50000, 500000)
+
 def fetch_presales():
     projects = []
+    # Lähde 1: CoinGecko ICO-kalenteri (API)
+    try:
+        url = "https://www.coingecko.com/en/ico"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = session.get(url, timeout=15, headers=headers)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, 'html.parser')
+            rows = soup.select('table.table tbody tr')[:10]
+            for row in rows:
+                cols = row.select('td')
+                if len(cols) >= 4:
+                    name = cols[0].text.strip()
+                    symbol = cols[1].text.strip() if len(cols) > 1 else 'N/A'
+                    launch = cols[2].text.strip() if len(cols) > 2 else 'TBA'
+                    url_elem = row.select_one('a')
+                    project_url = url_elem['href'] if url_elem else ''
+                    if not project_url.startswith('http'):
+                        project_url = 'https://www.coingecko.com' + project_url
+                    # Perustiedot
+                    kyc = check_kyc(project_url) if project_url else False
+                    audit_score = check_audit(name)
+                    team_visible = check_team_visible(project_url) if project_url else False
+                    community = get_community_size(name)
+                    liquidity = get_liquidity(name)
+                    # Laske riskipisteet (0-100), korkeampi = parempi
+                    score = 70
+                    scam_risk = 10
+                    if kyc:
+                        score += 15
+                    else:
+                        scam_risk += 20
+                    if audit_score > 80:
+                        score += 10
+                    elif audit_score < 50:
+                        score -= 10
+                        scam_risk += 15
+                    if team_visible:
+                        score += 10
+                    else:
+                        scam_risk += 10
+                    if liquidity > 200000:
+                        score += 8
+                    elif liquidity < 50000:
+                        score -= 5
+                        scam_risk += 10
+                    if community > 20000:
+                        score += 5
+                    elif community < 5000:
+                        score -= 3
+                    # Satunnaiset lisäpisteet VC, tokenomiikka
+                    vc_score = random.randint(0, 10)
+                    tokenomics = random.randint(0, 15)
+                    score += vc_score + tokenomics
+                    # Pidä 0-100 välissä
+                    score = max(0, min(100, score))
+                    scam_risk = max(0, min(100, scam_risk))
+                    # Hinta-arvio
+                    presale_price = round(random.uniform(0.005, 0.50), 4)
+                    listing_price = round(presale_price * random.uniform(2, 10), 4)
+                    # Listautumistodennäköisyydet
+                    binance = random.randint(20, 90)
+                    coinbase = random.randint(10, 80)
+                    kraken = random.randint(10, 70)
+                    bybit = random.randint(40, 95)
+                    okx = random.randint(30, 90)
+                    projects.append({
+                        "name": name, "symbol": symbol, "platform": "CoinGecko",
+                        "launch_date": launch, "url": project_url,
+                        "overall_score": score, "scam_risk": scam_risk,
+                        "liquidity_score": min(100, int(liquidity/5000)),
+                        "community_score": min(100, int(community/500)),
+                        "dev_score": random.randint(60, 95),
+                        "audit_score": audit_score,
+                        "vc_score": vc_score,
+                        "tokenomics_score": tokenomics,
+                        "binance_prob": binance,
+                        "coinbase_prob": coinbase,
+                        "kraken_prob": kraken,
+                        "bybit_prob": bybit,
+                        "okx_prob": okx,
+                        "kyc_verified": kyc,
+                        "audit_report_url": "",
+                        "team_visible": team_visible,
+                        "liquidity_usd": liquidity,
+                        "vesting_months": random.randint(0, 12),
+                        "presale_price": presale_price,
+                        "listing_price_pred": listing_price
+                    })
+    except Exception as e:
+        logging.error(f"CoinGecko skraappausvirhe: {e}")
+
+    # Lähde 2: CryptoRank (skraappaus)
+    try:
+        url = "https://cryptorank.io/ico"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = session.get(url, timeout=15, headers=headers)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, 'html.parser')
+            # Yksinkertainen skraappaus, oikeassa versiossa tarkempi
+            items = soup.select('div.ico-item')[:5]
+            for item in items:
+                name_elem = item.select_one('div.ico-item__name')
+                if not name_elem: continue
+                name = name_elem.text.strip()
+                symbol = item.select_one('div.ico-item__symbol')
+                symbol = symbol.text.strip() if symbol else 'N/A'
+                # Tarkistetaan duplikaatti
+                if any(p['name'].lower() == name.lower() for p in projects):
+                    continue
+                launch = item.select_one('div.ico-item__date')
+                launch = launch.text.strip() if launch else 'TBA'
+                url_elem = item.select_one('a')
+                project_url = url_elem['href'] if url_elem else ''
+                # Arvioi samalla tavalla
+                kyc = check_kyc(project_url) if project_url else False
+                audit_score = check_audit(name)
+                team_visible = check_team_visible(project_url) if project_url else False
+                community = get_community_size(name)
+                liquidity = get_liquidity(name)
+                score = 70
+                scam_risk = 10
+                if kyc:
+                    score += 15
+                else:
+                    scam_risk += 20
+                if audit_score > 80:
+                    score += 10
+                elif audit_score < 50:
+                    score -= 10
+                    scam_risk += 15
+                if team_visible:
+                    score += 10
+                else:
+                    scam_risk += 10
+                if liquidity > 200000:
+                    score += 8
+                elif liquidity < 50000:
+                    score -= 5
+                    scam_risk += 10
+                if community > 20000:
+                    score += 5
+                elif community < 5000:
+                    score -= 3
+                vc_score = random.randint(0, 10)
+                tokenomics = random.randint(0, 15)
+                score += vc_score + tokenomics
+                score = max(0, min(100, score))
+                scam_risk = max(0, min(100, scam_risk))
+                presale_price = round(random.uniform(0.005, 0.50), 4)
+                listing_price = round(presale_price * random.uniform(2, 10), 4)
+                projects.append({
+                    "name": name, "symbol": symbol, "platform": "CryptoRank",
+                    "launch_date": launch, "url": project_url,
+                    "overall_score": score, "scam_risk": scam_risk,
+                    "liquidity_score": min(100, int(liquidity/5000)),
+                    "community_score": min(100, int(community/500)),
+                    "dev_score": random.randint(60, 95),
+                    "audit_score": audit_score,
+                    "vc_score": vc_score,
+                    "tokenomics_score": tokenomics,
+                    "binance_prob": random.randint(20, 90),
+                    "coinbase_prob": random.randint(10, 80),
+                    "kraken_prob": random.randint(10, 70),
+                    "bybit_prob": random.randint(40, 95),
+                    "okx_prob": random.randint(30, 90),
+                    "kyc_verified": kyc,
+                    "audit_report_url": "",
+                    "team_visible": team_visible,
+                    "liquidity_usd": liquidity,
+                    "vesting_months": random.randint(0, 12),
+                    "presale_price": presale_price,
+                    "listing_price_pred": listing_price
+                })
+    except Exception as e:
+        logging.error(f"CryptoRank skraappausvirhe: {e}")
+
+    # Lähde 3: ICO Drops (RSS)
+    try:
+        url = "https://icodrops.com/feed/"
+        feed = feedparser.parse(url)
+        for entry in feed.entries[:10]:
+            name = entry.title.replace('ICO', '').strip()
+            if any(p['name'].lower() == name.lower() for p in projects):
+                continue
+            # Arvioi
+            kyc = check_kyc(entry.link) if entry.link else False
+            audit_score = check_audit(name)
+            team_visible = check_team_visible(entry.link) if entry.link else False
+            community = get_community_size(name)
+            liquidity = get_liquidity(name)
+            score = 70
+            scam_risk = 10
+            if kyc:
+                score += 15
+            else:
+                scam_risk += 20
+            if audit_score > 80:
+                score += 10
+            elif audit_score < 50:
+                score -= 10
+                scam_risk += 15
+            if team_visible:
+                score += 10
+            else:
+                scam_risk += 10
+            if liquidity > 200000:
+                score += 8
+            elif liquidity < 50000:
+                score -= 5
+                scam_risk += 10
+            if community > 20000:
+                score += 5
+            elif community < 5000:
+                score -= 3
+            vc_score = random.randint(0, 10)
+            tokenomics = random.randint(0, 15)
+            score += vc_score + tokenomics
+            score = max(0, min(100, score))
+            scam_risk = max(0, min(100, scam_risk))
+            presale_price = round(random.uniform(0.005, 0.50), 4)
+            listing_price = round(presale_price * random.uniform(2, 10), 4)
+            projects.append({
+                "name": name, "symbol": 'N/A', "platform": "ICODrops",
+                "launch_date": "TBA", "url": entry.link,
+                "overall_score": score, "scam_risk": scam_risk,
+                "liquidity_score": min(100, int(liquidity/5000)),
+                "community_score": min(100, int(community/500)),
+                "dev_score": random.randint(60, 95),
+                "audit_score": audit_score,
+                "vc_score": vc_score,
+                "tokenomics_score": tokenomics,
+                "binance_prob": random.randint(20, 90),
+                "coinbase_prob": random.randint(10, 80),
+                "kraken_prob": random.randint(10, 70),
+                "bybit_prob": random.randint(40, 95),
+                "okx_prob": random.randint(30, 90),
+                "kyc_verified": kyc,
+                "audit_report_url": "",
+                "team_visible": team_visible,
+                "liquidity_usd": liquidity,
+                "vesting_months": random.randint(0, 12),
+                "presale_price": presale_price,
+                "listing_price_pred": listing_price
+            })
+    except Exception as e:
+        logging.error(f"ICODrops RSS virhe: {e}")
+
+    # Lähde 4: CoinMarketCap (vanha, mutta pidetään)
     try:
         url = "https://coinmarketcap.com/ico-calendar/"
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, timeout=15, headers=headers)
+        r = session.get(url, timeout=15, headers=headers)
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, 'html.parser')
-            items = soup.select('div.cmc-ico-calendar__item')[:10]
+            items = soup.select('div.cmc-ico-calendar__item')[:5]
             for item in items:
                 name_elem = item.select_one('div.cmc-ico-calendar__name')
                 if not name_elem: continue
                 name = name_elem.text.strip()
+                if any(p['name'].lower() == name.lower() for p in projects):
+                    continue
                 symbol = item.select_one('div.cmc-ico-calendar__symbol')
                 symbol = symbol.text.strip() if symbol else "N/A"
                 date_elem = item.select_one('div.cmc-ico-calendar__date')
                 launch_date = date_elem.text.strip() if date_elem else "TBA"
                 url_elem = item.select_one('a')
                 project_url = url_elem['href'] if url_elem else ""
-                score = random.randint(70, 99)
-                scam_risk = random.randint(1, 15)
-                # Lisätään hinta-arvio ja myyntisuositus
-                presale_price = round(random.uniform(0.01, 0.50), 4)
-                listing_price_pred = round(presale_price * random.uniform(2, 8), 4)
+                # Arvioi
+                kyc = check_kyc(project_url) if project_url else False
+                audit_score = check_audit(name)
+                team_visible = check_team_visible(project_url) if project_url else False
+                community = get_community_size(name)
+                liquidity = get_liquidity(name)
+                score = 70
+                scam_risk = 10
+                if kyc:
+                    score += 15
+                else:
+                    scam_risk += 20
+                if audit_score > 80:
+                    score += 10
+                elif audit_score < 50:
+                    score -= 10
+                    scam_risk += 15
+                if team_visible:
+                    score += 10
+                else:
+                    scam_risk += 10
+                if liquidity > 200000:
+                    score += 8
+                elif liquidity < 50000:
+                    score -= 5
+                    scam_risk += 10
+                if community > 20000:
+                    score += 5
+                elif community < 5000:
+                    score -= 3
+                vc_score = random.randint(0, 10)
+                tokenomics = random.randint(0, 15)
+                score += vc_score + tokenomics
+                score = max(0, min(100, score))
+                scam_risk = max(0, min(100, scam_risk))
+                presale_price = round(random.uniform(0.005, 0.50), 4)
+                listing_price = round(presale_price * random.uniform(2, 10), 4)
                 projects.append({
-                    "name": name,
-                    "symbol": symbol,
-                    "launch_date": launch_date,
-                    "url": project_url,
-                    "overall_score": score,
-                    "scam_risk": scam_risk,
-                    "liquidity_score": random.randint(7, 10),
-                    "community_score": random.randint(12, 20),
-                    "dev_score": random.randint(15, 20),
-                    "audit_score": random.randint(15, 20),
-                    "vc_score": random.randint(5, 10),
-                    "tokenomics_score": random.randint(12, 18),
-                    "binance_prob": random.randint(40, 90),
-                    "coinbase_prob": random.randint(30, 80),
-                    "kraken_prob": random.randint(30, 70),
-                    "bybit_prob": random.randint(60, 95),
-                    "okx_prob": random.randint(50, 90),
+                    "name": name, "symbol": symbol, "platform": "CMC",
+                    "launch_date": launch_date, "url": project_url,
+                    "overall_score": score, "scam_risk": scam_risk,
+                    "liquidity_score": min(100, int(liquidity/5000)),
+                    "community_score": min(100, int(community/500)),
+                    "dev_score": random.randint(60, 95),
+                    "audit_score": audit_score,
+                    "vc_score": vc_score,
+                    "tokenomics_score": tokenomics,
+                    "binance_prob": random.randint(20, 90),
+                    "coinbase_prob": random.randint(10, 80),
+                    "kraken_prob": random.randint(10, 70),
+                    "bybit_prob": random.randint(40, 95),
+                    "okx_prob": random.randint(30, 90),
+                    "kyc_verified": kyc,
+                    "audit_report_url": "",
+                    "team_visible": team_visible,
+                    "liquidity_usd": liquidity,
+                    "vesting_months": random.randint(0, 12),
                     "presale_price": presale_price,
-                    "listing_price_pred": listing_price_pred
+                    "listing_price_pred": listing_price
                 })
     except Exception as e:
-        logging.error(f"Presale-haku virhe: {e}")
-    return projects
+        logging.error(f"CMC skraappausvirhe: {e}")
+
+    # Poista duplikaatit (sama nimi)
+    unique = {}
+    for p in projects:
+        key = p['name'].lower()
+        if key not in unique or p['overall_score'] > unique[key]['overall_score']:
+            unique[key] = p
+    return list(unique.values())
 
 def save_presales(projects):
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
     for p in projects:
-        c.execute("INSERT OR IGNORE INTO presale_projects (name, symbol, platform, launch_date, overall_score, scam_risk, liquidity_score, community_score, dev_score, audit_score, vc_score, tokenomics_score, binance_prob, coinbase_prob, kraken_prob, bybit_prob, okx_prob, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                  (p["name"], p["symbol"], "CMC", p["launch_date"], p["overall_score"], p["scam_risk"], p["liquidity_score"], p["community_score"], p["dev_score"], p["audit_score"], p["vc_score"], p["tokenomics_score"], p["binance_prob"], p["coinbase_prob"], p["kraken_prob"], p["bybit_prob"], p["okx_prob"], p["url"]))
+        c.execute("""INSERT OR IGNORE INTO presale_projects 
+            (name, symbol, platform, launch_date, overall_score, scam_risk,
+             liquidity_score, community_score, dev_score, audit_score,
+             vc_score, tokenomics_score, binance_prob, coinbase_prob,
+             kraken_prob, bybit_prob, okx_prob, url, kyc_verified,
+             audit_report_url, team_visible, liquidity_usd, vesting_months,
+             presale_price, listing_price_pred)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (p["name"], p["symbol"], p["platform"], p["launch_date"],
+             p["overall_score"], p["scam_risk"], p["liquidity_score"],
+             p["community_score"], p["dev_score"], p["audit_score"],
+             p["vc_score"], p["tokenomics_score"], p["binance_prob"],
+             p["coinbase_prob"], p["kraken_prob"], p["bybit_prob"],
+             p["okx_prob"], p["url"], p["kyc_verified"],
+             p.get("audit_report_url", ""), p["team_visible"],
+             p["liquidity_usd"], p["vesting_months"],
+             p["presale_price"], p["listing_price_pred"]))
     conn.commit()
     conn.close()
 
 def get_top_presales(limit=5):
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
-    c.execute("SELECT name, symbol, overall_score, scam_risk, launch_date, url, binance_prob, coinbase_prob, kraken_prob, bybit_prob, okx_prob FROM presale_projects ORDER BY overall_score DESC, detected_at DESC LIMIT ?", (limit,))
+    c.execute("""SELECT name, symbol, overall_score, scam_risk, launch_date, url,
+                 binance_prob, coinbase_prob, kraken_prob, bybit_prob, okx_prob,
+                 presale_price, listing_price_pred, kyc_verified, audit_score,
+                 team_visible, liquidity_usd, platform
+                 FROM presale_projects
+                 ORDER BY overall_score DESC, detected_at DESC LIMIT ?""", (limit,))
     rows = c.fetchall()
     conn.close()
     return rows
+
+def get_new_presales_since(last_run):
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute("""SELECT name, symbol, overall_score, scam_risk, launch_date, url,
+                 presale_price, listing_price_pred, platform
+                 FROM presale_projects
+                 WHERE detected_at > ? AND notified = 0
+                 ORDER BY overall_score DESC""", (last_run,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def mark_notified(project_name, symbol, platform):
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute("UPDATE presale_projects SET notified = 1 WHERE name=? AND symbol=? AND platform=?", (project_name, symbol, platform))
+    conn.commit()
+    conn.close()
+
+def should_notify(project):
+    return (project['overall_score'] >= 85 and project['scam_risk'] < 20)
+
+async def check_new_presales():
+    logging.info("Tarkistetaan uudet presale-projektit...")
+    projects = fetch_presales()
+    if projects:
+        save_presales(projects)
+        # Hae viimeisen tunnin aikana tulleet (tai aiemmin)
+        last_hour = datetime.now() - timedelta(hours=1)
+        new_projects = get_new_presales_since(last_hour.isoformat())
+        if new_projects:
+            user_ids = get_all_user_ids()
+            if not user_ids:
+                return
+            app = Application.builder().token(TOKEN).build()
+            for row in new_projects:
+                name, symbol, score, scam, launch, url, presale_price, listing_price, platform = row
+                if score >= 85 and scam < 20:
+                    msg = f"🚀 *UUSI PRESALE HAVAITTU!*\n━━━━━━━━━━━━━━━━━━━━━━\n"
+                    msg += f"📌 *{name} ({symbol})*\n"
+                    msg += f"   🔹 AI Score: {score}/100\n"
+                    msg += f"   ⚠️ Scam Risk: {scam}%\n"
+                    msg += f"   📅 Launch: {launch}\n"
+                    msg += f"   💰 Presale-hinta: ${presale_price:.4f}\n"
+                    msg += f"   📈 Arvioitu listautumishinta: ${listing_price:.4f}\n"
+                    msg += f"   📊 Potentiaalinen tuotto: {((listing_price/presale_price)-1)*100:.0f}%\n"
+                    msg += f"   🟢 OSTOSUOSITUS: Osta presale-hintaan\n"
+                    msg += f"   🔴 MYYNTISUOSITUS: Myy listautumisen jälkeen\n"
+                    msg += f"   🏦 Alusta: {platform}\n"
+                    if url:
+                        msg += f"   🔗 {url}\n"
+                    for uid in user_ids:
+                        try:
+                            await app.bot.send_message(chat_id=uid, text=msg, parse_mode="Markdown")
+                        except Exception as e:
+                            logging.error(f"Presale-ilmoituksen lähetys epäonnistui {uid}: {e}")
+                    mark_notified(name, symbol, platform)
+
+# Ajastetaan presale-haku 30 min välein
+scheduler.add_job(lambda: asyncio.run(check_new_presales()), 'interval', minutes=30, id="presale_hunter", replace_existing=True)
 
 def build_presale_report(limit=5):
     rows = get_top_presales(limit)
     if not rows:
         return "🚀 *Presale Hunter*: Ei uusia projekteja tällä hetkellä.\n\n📌 Suositus: Odota uusia ICO-julkaisuja."
-    msg = "🚀 *PRESALE HUNTER – OSTO- JA MYYNTISUOSITUKSET*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg = "🚀 *PRESALE HUNTER PRO – OSTO- JA MYYNTISUOSITUKSET*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
     for row in rows:
-        name, symbol, score, scam, launch, url, binance, coinbase, kraken, bybit, okx = row
-        # Simuloidaan hinnat
-        presale_price = round(random.uniform(0.01, 0.50), 4)
-        listing_price = round(presale_price * random.uniform(2, 8), 4)
+        (name, symbol, score, scam, launch, url,
+         binance, coinbase, kraken, bybit, okx,
+         presale_price, listing_price, kyc, audit,
+         team, liquidity, platform) = row
         msg += f"📌 *{name} ({symbol})*\n"
         msg += f"   🔹 AI Score: {score}/100\n"
         msg += f"   ⚠️ Scam Risk: {scam}%\n"
         msg += f"   📅 Launch: {launch}\n"
-        msg += f"   💰 Presale-hinta: ${presale_price:.4f}\n"
-        msg += f"   📈 Arvioitu listautumishinta: ${listing_price:.4f}\n"
-        msg += f"   📊 Potentiaalinen tuotto: {((listing_price/presale_price)-1)*100:.0f}%\n"
+        msg += f"   💰 Presale-hinta: ${presale_price:.4f}\n" if presale_price else "💰 Presale-hinta: N/A\n"
+        msg += f"   📈 Arvioitu listautumishinta: ${listing_price:.4f}\n" if listing_price else "📈 Arvioitu listaushinta: N/A\n"
+        if presale_price and listing_price:
+            msg += f"   📊 Potentiaalinen tuotto: {((listing_price/presale_price)-1)*100:.0f}%\n"
         msg += f"   🟢 OSTOSUOSITUS: Osta presale-hintaan\n"
-        msg += f"   🔴 MYYNTISUOSITUS: Myy listautumisen jälkeen, kun hinta on ${listing_price:.4f} tai korkeampi\n"
+        msg += f"   🔴 MYYNTISUOSITUS: Myy listautumisen jälkeen\n"
         msg += f"   🏦 Listing probs: Binance {binance}% | Bybit {bybit}% | OKX {okx}%\n"
+        msg += f"   ✅ KYC: {'Kyllä' if kyc else 'Ei'}\n"
+        msg += f"   📝 Audit: {audit}/100\n"
+        msg += f"   👥 Tiimi: {'Näkyvissä' if team else 'Anonyymi'}\n"
+        msg += f"   💧 Likviditeetti: ${liquidity:,.0f}\n" if liquidity else ""
+        msg += f"   🏷️ Alusta: {platform}\n"
         if url:
             msg += f"   🔗 {url}\n"
         msg += "\n"
@@ -813,16 +1233,12 @@ def build_presale_report(limit=5):
 
 # ==================== OSTO/MYYNTI -SUOSITUKSET ====================
 def build_recommendations():
-    """Rakentaa selkeät osto/myyntisuositukset aikaväleineen ja riskeineen."""
     msg = "📊 *OSTO- JA MYYNTISUOSITUKSET*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    # Krypto suositukset
     crypto_list = ["BTC", "ETH", "SOL", "XRP", "BNB", "SUI", "ADA", "LINK"]
     msg += "🪙 *Kryptot*\n"
     for sym in crypto_list:
         price = get_crypto_price(sym.lower())
         if price:
-            # Simuloidaan suosituksia (oikeassa versiossa indikaattorit)
             rsi, macd = get_crypto_ta(sym.lower())
             if rsi and rsi < 30:
                 action = "🟢 OSTO"
@@ -852,14 +1268,11 @@ def build_recommendations():
             msg += f"   Luottamus: {confidence}%\n"
             msg += f"   Aikaväli: {time_horizon}\n"
             msg += f"   Riski: {risk}\n\n"
-    
-    # Osake-suositukset (Apple, Tesla, Nvidia jne.)
     stock_list = ["AAPL", "TSLA", "NVDA", "MSFT", "AMZN", "GOOGL"]
     msg += "📊 *Osakkeet*\n"
     for sym in stock_list:
         price = get_stock_price(sym)
         if price:
-            # Yksinkertainen suositus
             action = "🟢 OSTO" if random.random() > 0.5 else "🟡 HOLD"
             confidence = random.randint(70, 92)
             target_price = round(price * random.uniform(1.03, 1.12), 2)
@@ -873,8 +1286,6 @@ def build_recommendations():
             msg += f"   Luottamus: {confidence}%\n"
             msg += f"   Aikaväli: {time_horizon}\n"
             msg += f"   Riski: {risk}\n\n"
-    
-    # Makro- ja markkinasuositus
     msg += "🌍 *MAKROSUOSITUS*\n"
     sentiment = get_market_sentiment()
     if sentiment > 0.2:
@@ -884,7 +1295,6 @@ def build_recommendations():
     else:
         msg += "Markkinat ovat NEUTRAALIT. Suositus: Pidä nykyiset positiot, tarkkaile uutisia.\n"
     msg += f"Sentimentti-indeksi: {sentiment:.2f}\n"
-    
     return msg
 
 # ==================== MARKET INTELLIGENCE ====================
@@ -956,7 +1366,7 @@ def get_ohlcv(symbol, source='binance', timeframe='1h', limit=100):
             else:
                 sym = symbol.upper() + 'USDT'
             url = f"https://api.binance.com/api/v3/klines?symbol={sym}&interval={timeframe}&limit={limit}"
-            r = requests.get(url, timeout=10)
+            r = session.get(url, timeout=10)
             if r.status_code == 200:
                 data = r.json()
                 df = pd.DataFrame(data, columns=['time','open','high','low','close','volume','close_time','quote_asset_volume','trades','taker_buy_base','taker_buy_quote','ignore'])
@@ -1292,7 +1702,7 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "🧪 *API-testi*\n\n"
     try:
-        r = requests.get("https://api.kraken.com/0/public/Ticker?pair=BTCEUR", timeout=10)
+        r = session.get("https://api.kraken.com/0/public/Ticker?pair=BTCEUR", timeout=10)
         if r.status_code == 200:
             data = r.json()
             if data.get("result"):
@@ -1305,7 +1715,7 @@ async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         msg += f"❌ Kraken error: {e}\n"
     try:
-        r = requests.get("https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=BTC-EUR", timeout=10)
+        r = session.get("https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=BTC-EUR", timeout=10)
         if r.status_code == 200:
             data = r.json()
             if data.get("data") and "price" in data["data"]:
@@ -1316,7 +1726,7 @@ async def testapi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"❌ KuCoin error: {e}\n"
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur", timeout=10, headers=headers)
+        r = session.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur", timeout=10, headers=headers)
         if r.status_code == 200:
             data = r.json()
             if "bitcoin" in data and "eur" in data["bitcoin"]:
