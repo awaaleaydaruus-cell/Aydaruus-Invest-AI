@@ -23,7 +23,6 @@ import json
 import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-# Lisätty curl_cffi parempaa skraappausta varten
 from curl_cffi import requests as curl_requests
 
 TOKEN = os.environ["BOT_TOKEN"]
@@ -729,8 +728,8 @@ def build_crypto_ai_report():
         msg += "\n🐋 Ei suuria siirtoja havaittu (tai API-rajoitus).\n"
     return msg
 
-# ==================== PRESALE HUNTER PRO (uusi, parempi) ====================
-# Valmis fallback-lista – 6 projektia, jotka näkyvät automaattisesti
+# ==================== PRESALE HUNTER PRO ====================
+# TÄHÄN LISÄTTY UUSI PROJEKTI
 FALLBACK_PRESALES = [
     {
         "name": "EcoChain", "symbol": "ECO", "platform": "Fallback",
@@ -803,10 +802,37 @@ FALLBACK_PRESALES = [
         "kyc_verified": True, "team_visible": True,
         "liquidity_usd": 380000, "vesting_months": 5,
         "presale_price": 0.028, "listing_price_pred": 0.22
+    },
+    # UUSI PROJEKTI LISÄTTY TÄHÄN:
+    {
+        "name": "Nimi",
+        "symbol": "TICKER",
+        "platform": "Manual",
+        "launch_date": "2026-08-01",
+        "url": "https://...",
+        "overall_score": 90,
+        "scam_risk": 10,
+        "liquidity_score": 80,
+        "community_score": 75,
+        "dev_score": 85,
+        "audit_score": 80,
+        "vc_score": 7,
+        "tokenomics_score": 12,
+        "binance_prob": 70,
+        "coinbase_prob": 60,
+        "kraken_prob": 50,
+        "bybit_prob": 80,
+        "okx_prob": 75,
+        "kyc_verified": True,
+        "team_visible": True,
+        "liquidity_usd": 200000,
+        "vesting_months": 4,
+        "presale_price": 0.02,
+        "listing_price_pred": 0.15
     }
 ]
 
-# Apufunktiot
+# Apufunktiot (check_kyc, check_audit jne.) – sama kuin aiemmin
 def check_kyc(url):
     try:
         r = session.get(url, timeout=10)
@@ -838,7 +864,6 @@ def get_liquidity(project_name):
 
 def fetch_presales():
     projects = []
-    # Yritetään ensin curl_cffi:llä (jäljittelee Chromea)
     try:
         url = "https://www.coingecko.com/en/ico"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
@@ -906,12 +931,10 @@ def fetch_presales():
     except Exception as e:
         logging.error(f"curl_cffi-skraappaus epäonnistui: {e}")
 
-    # Jos projekteja ei löytynyt, palauta fallback
     if not projects:
         logging.warning("Skraappaus ei tuottanut tuloksia, käytetään fallback-listaa")
         return FALLBACK_PRESALES
 
-    # Poista duplikaatit
     unique = {}
     for p in projects:
         key = p['name'].lower()
@@ -974,9 +997,6 @@ def mark_notified(project_name, symbol, platform):
     c.execute("UPDATE presale_projects SET notified = 1 WHERE name=? AND symbol=? AND platform=?", (project_name, symbol, platform))
     conn.commit()
     conn.close()
-
-def should_notify(project):
-    return (project['overall_score'] >= 85 and project['scam_risk'] < 20)
 
 async def check_new_presales():
     logging.info("Tarkistetaan uudet presale-projektit...")
@@ -1362,7 +1382,7 @@ scheduler.add_job(update_strategy_weights, 'cron', hour=23, minute=0, id="learni
 scheduler.add_job(lambda: asyncio.run(check_signals_and_alert()), 'interval', minutes=30, id="signal_check", replace_existing=True)
 scheduler.start()
 
-# ==================== TELEGRAM-KOMENNOT (kaikki) ====================
+# ==================== TELEGRAM-KOMENNOT ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     try:
